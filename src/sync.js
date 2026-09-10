@@ -261,6 +261,16 @@ export function toWireCommand(command) {
   return wire;
 }
 
+/**
+ * The outbox also records local-only work such as `backup.import`, which the
+ * server has no command kind for. Sending one would be rejected as an unknown
+ * kind and would park the whole outbox in an error state, so those records stay
+ * on the device and are not counted as pending sync work.
+ */
+function isWireCommand(command) {
+  return /^(task|block|session)\./.test(String(command.kind || command.type || ''));
+}
+
 function pendingEntityIds(outbox) {
   return new Set(outbox.filter((entry) => entry.entityId).map((entry) => entry.entityId));
 }
@@ -358,7 +368,7 @@ export function createSync({
   }
 
   async function refreshStatus(preferred = null) {
-    const outbox = await store.listOutbox();
+    const outbox = (await store.listOutbox()).filter(isWireCommand);
     const conflicts = outbox.filter((command) => command.status === 'conflict').length;
     const errors = outbox.filter((command) => command.status === 'error').length;
     const pending = outbox.filter((command) => ACTIVE_OUTBOX_STATUSES.has(command.status)).length;
@@ -503,7 +513,7 @@ export function createSync({
   }
 
   async function push() {
-    const snapshot = orderCommands(await store.listOutbox());
+    const snapshot = orderCommands((await store.listOutbox()).filter(isWireCommand));
     if (snapshot.some((command) => isDue(command, now()))) await ensureDevice();
     const byId = new Map(snapshot.map((command) => [command.opId, command]));
     const blocked = new Set(
