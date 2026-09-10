@@ -4,7 +4,7 @@ Launch safeguards for the web beta: what is automated, what a person has to do
 in the Supabase dashboard, and how to get back to a known-good state.
 
 Automated checks live in `.github/workflows/ci.yml`. Everything under
-"Requires dashboard access" is deliberately not automated, because it needs
+"Supabase project state" is deliberately not automated, because it needs
 credentials that must never enter this repository.
 
 ## Continuous integration
@@ -87,15 +87,34 @@ app does not start. This only matters if something ever links below
 `/LoughdIn/`. The app has no client-side routing and auth callbacks return to
 the scope root, so nothing does today.
 
-## Requires dashboard access
+## Supabase project state
+
+Recorded 10 September 2026 for project `kknbyhlwmuzttyxyuffe`, organisation
+`PersonalProjects`, region `eu-west-2`, PostgreSQL 17.6.
+
+The organisation is on the **free plan**, which shapes two things below.
+
+### Advisors
+
+The security advisor reports three findings. All three are expected, and each
+is a consequence of the design rather than a defect:
+
+| Finding | Why it is expected |
+| --- | --- |
+| Five `private` tables have RLS on with no policy | Deliberate. RLS on with no policy denies everything, and the tables carry no grants either. They are reached only through the security-definer RPCs. |
+| Four public RPCs are security-definer and callable by `authenticated` | That is the write path. Each one derives ownership from `auth.uid()` on the connection and never from the request body. |
+| `btree_gist` is installed in `public` | Required for the `time_blocks` exclusion constraint. Moving an extension between schemas would rewrite the dependent index, so it stays where the migration put it. |
+
+Re-run the advisor after any migration. A **new** finding is worth
+investigating; these three are the baseline.
 
 ### Monitoring and alerts
 
-In the Supabase dashboard, under Logs and Reports, add alerts for:
+In the dashboard, under Logs and Reports, add alerts for:
 
 - **Auth failures.** A sustained rise in failed sign-ins or confirmations
-  usually means the SMTP or redirect configuration in
-  `docs/AUTH-SMTP-RUNBOOK.md` has drifted.
+  usually means the URL configuration in `docs/AUTH-SMTP-RUNBOOK.md` has
+  drifted, or the two-per-hour email ceiling is being hit.
 - **RPC errors by SQLSTATE.** The schema raises deliberate codes, and each one
   means something different:
 
@@ -114,16 +133,34 @@ In the Supabase dashboard, under Logs and Reports, add alerts for:
   exhausts the pool.
 - **Plan quota**, on storage, egress and monthly active users.
 
-### Backup and restore
+### Free-plan consequences
 
-Confirm in the dashboard which backup tier the project is on, and record the
-retention period and the recovery point objective in this file once known.
+**The project pauses after a week without activity.** The app keeps working
+while it is paused, because everything is local first, but nothing syncs and
+every command queues in the outbox until the project is restored from the
+dashboard. During a beta with intermittent testers this will happen. Restore
+the project before concluding that sync is broken.
+
+**There are no managed backups.** Point-in-time recovery and scheduled
+snapshots are paid features. Until the project is on a paid plan the recovery
+story is:
+
+- Each account can export its own data from the account dialog, with no server
+  involvement. That is the copy that actually protects a user's work.
+- A manual `pg_dump` against the project, taken before any migration that
+  rewrites data, is the only server-side copy. Store it outside the repository.
+
+Record the date of each manual dump and where it was stored. Once the project
+moves to a paid plan, replace this section with the backup tier, the retention
+period, and the recovery point objective, then run the drill below.
+
+### Backup restore drill
 
 Verify a restore before beta, never after an incident:
 
 1. Create a separate Supabase project for the drill. Never restore over
    production.
-2. Restore the most recent backup into it.
+2. Restore the most recent dump or backup into it.
 3. Apply the migrations in `supabase/migrations/` in filename order and confirm
    the CLI reports no pending migration.
 4. Point a local build at the drill project by editing `src/config.js`, sign in
@@ -134,7 +171,7 @@ Verify a restore before beta, never after an incident:
 
 Repeat the drill after any schema change that rewrites data.
 
-### Rollback
+## Rollback
 
 **Frontend.** Pages deploys from `master` through `deploy.yml`. To roll back,
 revert the offending commit on `master` and let the workflow redeploy. Do not
