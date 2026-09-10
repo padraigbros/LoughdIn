@@ -56,8 +56,14 @@ function backoff(attempt, random, cap = RETRY_CAP_MS) {
 
 function priorityFromServer(priority, fallback = 'med') {
   if (priority === 'low' || priority === 'med' || priority === 'high') return priority;
+  if (priority === 'medium') return 'med';
   if (typeof priority === 'number') return priority >= 3 ? 'high' : priority <= 1 ? 'low' : 'med';
   return fallback;
+}
+
+/** The local vocabulary is low|med|high; the server enum is low|medium|high. */
+function priorityToServer(priority) {
+  return priority === 'med' ? 'medium' : priority;
 }
 
 function quadrantFromServer(quadrant) {
@@ -249,6 +255,9 @@ export function toWireCommand(command) {
   }
   wire.protocol ??= 1;
   wire.kind ??= command.type;
+  if (plainObject(wire.payload) && wire.payload.priority !== undefined) {
+    wire.payload.priority = priorityToServer(wire.payload.priority);
+  }
   return wire;
 }
 
@@ -340,6 +349,7 @@ export function createSync({
   let unsubscribe = null;
   let retryTimer = null;
   let generation = 0;
+  let deviceRegistered = false;
   let status = { state: 'local', pending: 0, conflicts: 0, error: null };
 
   function publish(state, detail = {}) {
@@ -459,13 +469,17 @@ export function createSync({
 
   async function markFailure(command, error) {
     const attempts = (command.attempts || 0) + 1;
-    if (shouldRetry(error)) {
+    // An expired token is recoverable: the auth client refreshes it in the
+    // background, so the command waits rather than being parked as an error.
+    const expired = isAuthError(error);
+    if (expired) deviceRegistered = false;
+    if (expired || shouldRetry(error)) {
       const delay = retryAfterMs(error, now()) ?? backoff(attempts, random, retryCapMs);
       const nextAttemptAt = new Date(now() + delay).toISOString();
       await store.updateOutbox(command.opId, {
         status: 'retry', attempts, lastError: errorMessage(error), nextAttemptAt,
       });
-      publish(isOfflineError(error) ? 'offline' : 'pending', { error: errorMessage(error) });
+      publish(expired ? 'auth' : isOfflineError(error) ? 'offline' : 'pending', { error: errorMessage(error) });
       schedule(delay);
       return;
     }
@@ -475,8 +489,22 @@ export function createSync({
     publish('error', { error: errorMessage(error) });
   }
 
+  /**
+   * The server rejects any command from an unknown device, so the device has to
+   * be registered once per signed-in session before the first command is sent.
+   */
+  async function ensureDevice() {
+    if (deviceRegistered) return;
+    if (typeof transport.registerDevice !== 'function' || typeof store.getDeviceId !== 'function') return;
+    const deviceId = await store.getDeviceId();
+    if (!deviceId) return;
+    unwrap(await transport.registerDevice(deviceId));
+    deviceRegistered = true;
+  }
+
   async function push() {
     const snapshot = orderCommands(await store.listOutbox());
+    if (snapshot.some((command) => isDue(command, now()))) await ensureDevice();
     const byId = new Map(snapshot.map((command) => [command.opId, command]));
     const blocked = new Set(
       snapshot.filter((command) => command.status === 'conflict' || command.status === 'error').map((command) => command.opId),
@@ -500,7 +528,7 @@ export function createSync({
       });
       let receipt;
       try {
-        receipt = normalizeReceipt(await client.applyCommand(toWireCommand(command)));
+        receipt = normalizeReceipt(await transport.applyCommand(toWireCommand(command)));
       } catch (error) {
         // `attempts` is already durable. markFailure receives the pre-send value.
         await markFailure(command, error);
@@ -539,7 +567,12 @@ export function createSync({
       await refreshStatus();
       return clone(status);
     } catch (error) {
-      publish(isOfflineError(error) ? 'offline' : 'error', { error: errorMessage(error) });
+      if (isAuthError(error)) {
+        deviceRegistered = false;
+        publish('auth', { error: errorMessage(error) });
+      } else {
+        publish(isOfflineError(error) ? 'offline' : 'error', { error: errorMessage(error) });
+      }
       throw error;
     }
   }
@@ -578,6 +611,7 @@ export function createSync({
   function stop() {
     stopped = true;
     running = false;
+    deviceRegistered = false;
     clearRetry();
     unsubscribe?.();
     unsubscribe = null;
