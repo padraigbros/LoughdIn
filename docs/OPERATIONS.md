@@ -47,6 +47,46 @@ select private.prune_all_sync_history(30, 500);
 
 The function is not granted to `anon` or `authenticated` and must never be.
 
+## Verifying the offline launch
+
+`tests/pwa.test.js` proves the service worker precaches the whole shell and that
+the build emits only publishable files. It cannot prove the deployed site boots
+without a network. Run this against the live site after a deploy that touches
+`sw.js`, `index.html`, or anything in `src/`, `styles/` or `vendor/`.
+
+Load `https://padraigbros.github.io/LoughdIn/`, wait for the worker to activate,
+then in the console:
+
+```js
+const reg = await navigator.serviceWorker.ready;
+const cache = await caches.open((await caches.keys()).find(n => n.startsWith('loughdin-shell:')));
+console.log((await cache.keys()).length, 'assets cached at', reg.scope);
+```
+
+Reload, then check what actually came over the network:
+
+```js
+const nav = performance.getEntriesByType('navigation')[0];
+const rows = performance.getEntriesByType('resource');
+console.log({
+  navigationFromWorker: nav.workerStart > 0 && nav.transferSize === 0,
+  networkBytes: rows.filter(r => r.transferSize > 0).map(r => r.name),
+  deliveryTypes: [...new Set(rows.map(r => r.deliveryType))],
+});
+```
+
+A passing run shows the navigation served by the worker with zero transfer,
+`networkBytes` empty, and every resource delivered as `cache-storage`. Zero
+network bytes is the assertion that matters: nothing was requested over the
+network, so the absence of one cannot change the result.
+
+Note the navigation fallback returns the cached `index.html` for **any** path
+inside the scope. At a deeper path the document renders but its relative script
+and style URLs resolve against that deeper path and are not in the cache, so the
+app does not start. This only matters if something ever links below
+`/LoughdIn/`. The app has no client-side routing and auth callbacks return to
+the scope root, so nothing does today.
+
 ## Requires dashboard access
 
 ### Monitoring and alerts
