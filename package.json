@@ -6,8 +6,8 @@
   "scripts": {
     "dev": "node scripts/vendor.mjs && node scripts/serve.mjs",
     "build": "node scripts/vendor.mjs && node scripts/build.mjs",
-    "check": "node --check src/app.js && node --check src/timer.js && node --check src/storage.js && node --check src/sync.js",
-    "test": "node --test tests/*.test.js",
+    "check": "node --check src/app.js && node --check src/timer.js && node --check src/storage.js && node --check src/sync.js && node --check src/planner.js && node --check src/scenes.js && node --check src/native.js && node --check src/config.js",
+    "test": "node scripts/vendor.mjs && node --test tests/*.test.js",
     "android:sync": "npm run build && cap sync android",
     "android:build": "npm run android:sync && cd android && gradlew.bat assembleDebug"
   },
