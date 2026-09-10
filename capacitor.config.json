@@ -1,0 +1,12 @@
+{
+  "appId": "ie.loughdin.app",
+  "appName": "Lough'd In",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_loughdin",
+      "iconColor": "#2a3325"
+    }
+  }
+}

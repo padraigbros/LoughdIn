@@ -1,0 +1,12 @@
+node_modules/
+dist/
+vendor/
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+android/.gradle/
+android/local.properties
+supabase/.branches/
+supabase/.temp/
