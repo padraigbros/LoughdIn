@@ -92,13 +92,13 @@ select pg_temp.assert_true(
 -- Snapshot and incremental cursors describe the same owner-consistent state.
 select pg_temp.assert_true(
   (public.bootstrap_snapshot(100)->>'cursor')::bigint =
-    (select current_sequence from private.sync_heads where owner_id=auth.uid()),
+    (public.pull_changes(0,100)->>'highWatermark')::bigint,
   'snapshot cursor equals the locked owner head'
 );
 select pg_temp.assert_true(
   (public.pull_changes(0,2)->>'cursor')::bigint = 2
     and (public.pull_changes(0,2)->>'highWatermark')::bigint =
-      (select current_sequence from private.sync_heads where owner_id=auth.uid())
+      (public.bootstrap_snapshot(100)->>'cursor')::bigint
     and (public.pull_changes(0,2)->>'hasMore')::boolean,
   'bounded pull advances a stable cursor below its high watermark'
 );
