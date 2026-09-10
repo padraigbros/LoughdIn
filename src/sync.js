@@ -629,10 +629,91 @@ export function createSync({
     publish('local', { error: null });
   }
 
+  // A conflicted command carries the server's account of the clash in
+  // serverReceipt, written by private.save_conflict. Resolution is purely
+  // local: the server already refused the command and recorded it, so there is
+  // nothing to withdraw remotely.
+  function describeConflict(command) {
+    const receipt = command.serverReceipt || {};
+    return {
+      opId: command.opId,
+      kind: command.kind,
+      entityType: receipt.entityType || receipt.entity_type || command.kind?.split('.')[0] || null,
+      entityId: command.entityId ?? receipt.entityId ?? receipt.entity_id ?? null,
+      reason: command.lastError || receipt.reason || 'Conflict requires resolution',
+      proposed: receipt.proposed ?? command.payload ?? null,
+      current: receipt.current ?? receipt.currentValue ?? receipt.current_value ?? null,
+      baseRevision: command.baseRevision ?? null,
+      currentRevision: receipt.currentRevision ?? receipt.current_revision ?? null,
+      blockedBy: command.afterOpId || command.predecessorOpId || null,
+    };
+  }
+
+  async function listConflicts() {
+    const outbox = (await store.listOutbox()).filter(isWireCommand);
+    return outbox.filter((command) => command.status === 'conflict').map(describeConflict);
+  }
+
+  // dependentsOf walks the queue behind opId transitively, since push() marks
+  // a whole dependent chain as conflicted when its head clashes.
+  function dependentsOf(outbox, opId) {
+    const found = [];
+    const frontier = [opId];
+    while (frontier.length) {
+      const parent = frontier.pop();
+      for (const command of outbox) {
+        if ((command.afterOpId || command.predecessorOpId) !== parent) continue;
+        if (found.includes(command)) continue;
+        found.push(command);
+        frontier.push(command.opId);
+      }
+    }
+    return found;
+  }
+
+  async function resolveConflict(opId, { strategy = 'server' } = {}) {
+    if (strategy !== 'server' && strategy !== 'local') {
+      throw new TypeError(`Unknown conflict strategy: ${strategy}`);
+    }
+    const outbox = (await store.listOutbox()).filter(isWireCommand);
+    const command = outbox.find((entry) => entry.opId === opId);
+    if (!command) throw new Error(`No queued command ${opId}`);
+    if (command.status !== 'conflict') throw new Error(`Command ${opId} is not in conflict`);
+    const dependents = dependentsOf(outbox, opId);
+
+    if (strategy === 'server') {
+      // Taking the server's version voids this command, and with it everything
+      // queued behind it: those commands were built on a base that is now gone.
+      for (const dependent of dependents) await store.ackOutbox(dependent.opId);
+      await store.ackOutbox(opId);
+    } else {
+      // Keeping the local change means replaying it against what the server
+      // holds now, so it rebases onto the revision the receipt reported.
+      const receipt = command.serverReceipt || {};
+      const rebase = receipt.currentRevision ?? receipt.current_revision ?? command.baseRevision;
+      await store.updateOutbox(opId, {
+        status: 'pending', baseRevision: rebase, attempts: 0,
+        lastError: null, nextAttemptAt: null, serverReceipt: null,
+      });
+      // Dependents were parked only because their head was stuck. Freeing the
+      // head frees them, and push() re-blocks them if it clashes again.
+      for (const dependent of dependents) {
+        if (dependent.status !== 'conflict') continue;
+        await store.updateOutbox(dependent.opId, {
+          status: 'pending', lastError: null, nextAttemptAt: null,
+        });
+      }
+    }
+    await refreshStatus();
+    schedule(0);
+  }
+
   return {
     start,
     stop,
     flush,
+    listConflicts,
+    resolveConflict,
     getStatus: () => clone(status),
   };
 }
