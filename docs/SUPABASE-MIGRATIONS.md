@@ -14,14 +14,19 @@ and how to keep the two in step.
 | | |
 | --- | --- |
 | Reconciled | 10 September 2026 |
-| Ledger contains | `202609080001` `sync_foundation` |
+| Ledger contains | `202609080001` `sync_foundation`, `202609100001` `sync_retention` |
 | Remote schema | Verified identical to the checked-in migration |
 | Applied but unrecorded | None |
 | Recorded but unapplied | None |
 
-`202609100001_sync_retention.sql` is **not** applied to the remote project. It
-lands with the pull request that introduces it, and must be applied immediately
-after that merge so the ledger stays equal to `supabase/migrations/`.
+`202609100001_sync_retention.sql` was applied later the same day with
+`supabase db push --linked`, so its ledger row carries recorded statements while
+the repaired foundation row carries none. That difference is expected and is how
+you can tell a repair from a push.
+
+Each of its three function bodies on the server is byte-identical to the file,
+and both pruning functions are `security definer` with `postgres` as the only
+privilege holder. Nothing was granted to `anon` or `authenticated`.
 
 ## What was compared before touching history
 
