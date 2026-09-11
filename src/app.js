@@ -244,7 +244,17 @@ function signedOutViews({d,err,note,actions,heading}){
   d.insertBefore(body,err);
   d.insertBefore(foot,actions);
   const close=actions.firstElementChild;
-  const view=(title,build)=>{heading.textContent=title;err.textContent='';note.textContent='';body.replaceChildren();foot.replaceChildren();actions.replaceChildren(close);build();};
+  // The views share one error line, one notice line and one body, so a request
+  // that outlives its own view would otherwise land on whichever view replaced
+  // it. Each view gets a generation, and `build` receives a predicate its
+  // handlers check before writing anything or switching away.
+  let generation=0;
+  const view=(title,build)=>{
+    const mine=++generation;
+    heading.textContent=title;err.textContent='';note.textContent='';
+    body.replaceChildren();foot.replaceChildren();actions.replaceChildren(close);
+    build(()=>mine===generation);
+  };
   const say=(el,text)=>{err.textContent=el===err?text:'';note.textContent=el===note?text:'';};
   const link=(text,go)=>{const b=element('button',{class:'auth-link',type:'button'},text);b.onclick=go;return b;};
   const aside=(text,linkText,go)=>{const p=element('p',{class:'auth-aside'},text+' ');p.append(link(linkText,go));foot.append(p);};
@@ -257,18 +267,23 @@ function signedOutViews({d,err,note,actions,heading}){
   const submitOn=(input,button)=>{input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();button.click();}};};
 
   function signIn(prefill=''){
-    view('Sign in',()=>{
+    view('Sign in',current=>{
       body.append(element('p',{},'Sign in to bring your tasks together across devices. Guest tasks stay here until you choose to import them.'));
       const email=authField('Email',{type:'email',autocomplete:'email',required:''});
       email.value=prefill;
       const password=authField('Password',{type:'password',autocomplete:'current-password',required:''});
       const forgot=element('p',{class:'auth-hint'});
-      forgot.append(link('Forgot your password?',async()=>{
+      // Held down for the duration of the request: without it, repeated clicks
+      // send repeated recovery emails and walk straight into the rate limit.
+      const recovery=link('Forgot your password?',async()=>{
         if(!email.reportValidity())return;
+        recovery.disabled=true;
         try{const result=await client.auth.resetPasswordForEmail(email.value.trim(),{redirectTo:authRedirectURL()});if(result.error)throw result.error;
-          say(note,'If that address has an account, a recovery link is on its way.');
-        }catch{say(err,'A recovery email could not be sent. Wait a moment and try again.');}
-      }));
+          if(current())say(note,'If that address has an account, a recovery link is on its way.');
+        }catch{if(current())say(err,'A recovery email could not be sent. Wait a moment and try again.');}
+        finally{recovery.disabled=false;}
+      });
+      forgot.append(recovery);
       body.append(forgot);
       const go=primary('Sign in',async button=>{
         if(!email.reportValidity()||!password.reportValidity())return;
@@ -277,6 +292,7 @@ function signedOutViews({d,err,note,actions,heading}){
           if(result.error)throw result.error;
           d.close();
         }catch(e){
+          if(!current())return;
           // An unconfirmed account is a waiting state, not a bad password.
           if(/not confirmed/i.test(e.message||''))return confirmSent(email.value.trim());
           say(err,e.message);
@@ -288,7 +304,7 @@ function signedOutViews({d,err,note,actions,heading}){
   }
 
   function signUp(prefill=''){
-    view('Create your account',()=>{
+    view('Create your account',current=>{
       body.append(element('p',{},'Your tasks sync across every device you sign in on. Guest tasks stay on this device until you choose to import them.'));
       const email=authField('Email',{type:'email',autocomplete:'email',required:''});
       email.value=prefill;
@@ -307,24 +323,28 @@ function signedOutViews({d,err,note,actions,heading}){
         try{const result=await client.auth.signUp({email:email.value.trim(),password:password.value,options:{emailRedirectTo:authRedirectURL()}});
           if(result.error)throw result.error;
           if(result.data.session)return d.close();
-          confirmSent(email.value.trim());
-        }catch(e){say(err,e.message);}finally{button.disabled=false;}
+          if(current())confirmSent(email.value.trim());
+        }catch(e){if(current())say(err,e.message);}finally{button.disabled=false;}
       });
-      submitOn(confirmation,go);
+      submitOn(email,go);submitOn(password,go);submitOn(confirmation,go);
       aside('Already have an account?','Sign in',()=>signIn(email.value.trim()));
     });
   }
 
   function confirmSent(email){
-    view('Confirm your email',()=>{
+    view('Confirm your email',current=>{
       body.append(element('p',{},'A confirmation link is on its way to '+email+'. Open it, then come back here and sign in.'));
       body.append(element('p',{class:'auth-hint'},'If an account already exists for this address, the link signs you in to that one instead.'));
+      // This view is reached without knowing whether the address is taken,
+      // because signUp does not say. resend does: it rejects for an address
+      // that is already confirmed, and rate-limits by address. Reporting
+      // either outcome would give away what the view exists to keep quiet, so
+      // the answer here is the same one the recovery link gives.
       primary('Resend the link',async button=>{
         button.disabled=true;
-        try{const result=await client.auth.resend({type:'signup',email,options:{emailRedirectTo:authRedirectURL()}});
-          if(result?.error)throw result.error;
-          say(note,'Sent again. It can take a minute to arrive.');
-        }catch(e){say(err,e.message||'The link could not be sent again. Wait a moment and try again.');}finally{button.disabled=false;}
+        try{await client.auth.resend({type:'signup',email,options:{emailRedirectTo:authRedirectURL()}});}catch{}
+        if(current())say(note,'If that address is still waiting on confirmation, another link is on its way. It can take a minute to arrive.');
+        button.disabled=false;
       });
       aside('Already confirmed?','Sign in',()=>signIn(email));
     });

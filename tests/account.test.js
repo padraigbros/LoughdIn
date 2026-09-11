@@ -205,7 +205,7 @@ test('a created account waits on confirmation, said calmly rather than in the er
     await settle();
     assert.equal(client.calls[1].name, 'resend');
     assert.deepEqual(client.calls[1].args[0].type, 'signup');
-    assert.match(textOf('.dialog-notice'), /Sent again/);
+    assert.match(textOf('.dialog-notice'), /another link is on its way/);
     assert.equal(textOf('.dialog-error'), '');
 
     linkNamed('Sign in').onclick();
@@ -227,6 +227,104 @@ test('an unconfirmed sign-in becomes the waiting state instead of a rejected pas
     await settle();
     assert.equal(textOf('h2'), 'Confirm your email');
     assert.equal(textOf('.dialog-error'), '');
+  } finally { await harness.dispose(); }
+});
+
+test('resending says the same thing whether or not the address is already taken', async () => {
+  // resend, unlike signUp, rejects for an address that is already confirmed.
+  const outcomes = [];
+  for (const reply of [async () => ({error: null}),
+    async () => ({error: new Error('A user with this email address has already been registered')}),
+    async () => { throw new Error('For security purposes, you can only request this after 54 seconds'); }]) {
+    const harness = await mount(stubClient({resend: reply}));
+    try {
+      await document.getElementById('btn-account').onclick();
+      linkNamed('Create an account').onclick();
+      fieldNamed('Email').value = 'taken@example.test';
+      fieldNamed('Password').value = fieldNamed('Confirm password').value = 'long-enough-one';
+      await primaryOf().onclick();
+      await settle();
+      await primaryOf().onclick();
+      await settle();
+      outcomes.push({notice: textOf('.dialog-notice'), error: textOf('.dialog-error')});
+    } finally { await harness.dispose(); }
+  }
+  assert.equal(outcomes[0].error, '', 'nothing the provider said reaches the person');
+  assert.deepEqual(outcomes[1], outcomes[0], 'an address already registered looks identical');
+  assert.deepEqual(outcomes[2], outcomes[0], 'so does being rate limited');
+});
+
+test('the recovery link is held down while its request is in flight', async () => {
+  let release;
+  const client = stubClient({
+    resetPasswordForEmail: () => new Promise(resolve => { release = () => resolve({error: null}); }),
+  });
+  const harness = await mount(client);
+  try {
+    await document.getElementById('btn-account').onclick();
+    fieldNamed('Email').value = 'aoife@example.test';
+    const recovery = linkNamed('Forgot your password?');
+    const pending = recovery.onclick();
+    await settle();
+    assert.equal(recovery.disabled, true, 'a second click cannot send a second email');
+    release();
+    await pending;
+    assert.equal(recovery.disabled, false);
+    assert.equal(client.calls.filter(c => c.name === 'resetPasswordForEmail').length, 1);
+  } finally { await harness.dispose(); }
+});
+
+test('a reply that arrives after the view has moved on is not shown on the new view', async () => {
+  let reject;
+  const client = stubClient({
+    signInWithPassword: () => new Promise((resolve, r) => { reject = () => r(new Error('Invalid login credentials')); }),
+  });
+  const harness = await mount(client);
+  try {
+    await document.getElementById('btn-account').onclick();
+    fieldNamed('Email').value = 'aoife@example.test';
+    fieldNamed('Password').value = 'wrong';
+    const pending = primaryOf().onclick();
+    await settle();
+    linkNamed('Create an account').onclick();          // switch away mid-request
+    fieldNamed('Password').value = 'half-typed';
+    reject();
+    await pending;
+    assert.equal(textOf('h2'), 'Create your account', 'the view the person is on is left alone');
+    assert.equal(textOf('.dialog-error'), '', 'and the stale error is dropped');
+    assert.equal(fieldNamed('Password').value, 'half-typed', 'what they had typed survives');
+  } finally { await harness.dispose(); }
+});
+
+test('an unconfirmed sign-in does not replace a view the person has since left', async () => {
+  let reject;
+  const client = stubClient({
+    signInWithPassword: () => new Promise((resolve, r) => { reject = () => r(new Error('Email not confirmed')); }),
+  });
+  const harness = await mount(client);
+  try {
+    await document.getElementById('btn-account').onclick();
+    fieldNamed('Email').value = 'waiting@example.test';
+    fieldNamed('Password').value = 'correct-horse';
+    const pending = primaryOf().onclick();
+    await settle();
+    linkNamed('Create an account').onclick();
+    reject();
+    await pending;
+    assert.equal(textOf('h2'), 'Create your account', 'the sign-up form is not torn down underneath them');
+  } finally { await harness.dispose(); }
+});
+
+test('Enter submits from every field on both forms', async () => {
+  const client = stubClient();
+  const harness = await mount(client);
+  try {
+    await document.getElementById('btn-account').onclick();
+    for (const label of ['Email', 'Password']) assert.ok(fieldNamed(label).onkeydown, 'sign in: ' + label);
+    linkNamed('Create an account').onclick();
+    for (const label of ['Email', 'Password', 'Confirm password']) {
+      assert.ok(fieldNamed(label).onkeydown, 'sign up: ' + label);
+    }
   } finally { await harness.dispose(); }
 });
 
