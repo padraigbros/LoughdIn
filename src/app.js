@@ -14,9 +14,9 @@ const activeTasks=s=>Object.entries(s.tasks).flatMap(([list,tasks])=>tasks.filte
 const findTask=(s,id)=>Object.values(s.tasks).flat().find(t=>t.id===id&&!t.deletedAt);
 const selected=s=>activeTasks(s).find(t=>t.id===s.activeTask)||null;
 function element(tag,attrs={},text=''){const el=document.createElement(tag);for(const [key,value] of Object.entries(attrs))el.setAttribute(key,value);el.textContent=text;return el;}
-const SYNC_MESSAGES={local:'Saved on this device',syncing:'Saved on this device · syncing…',pending:'Saved on this device · %n changes pending',offline:'Offline · saved on this device',auth:'Saved on this device · sign in to sync',conflict:'Saved on this device · open your account to resolve changes',error:'Saved on this device · sync needs attention',synced:'All changes synced'};
+const SYNC_MESSAGES={local:'Saved on this device',syncing:'Saved on this device · syncing…',pending:'Saved on this device · %n change%s pending',offline:'Offline · saved on this device',auth:'Saved on this device · sign in to sync',conflict:'Saved on this device · open your account to resolve changes',error:'Saved on this device · sync needs attention',synced:'All changes synced'};
 const SYNC_TONES={synced:'ok',syncing:'work',pending:'work',local:'idle',offline:'idle',auth:'warn',conflict:'alert',error:'alert'};
-export function syncMessage(state,pending=0){return (SYNC_MESSAGES[state]||SYNC_MESSAGES.local).replace('%n',pending);}
+export function syncMessage(state,pending=0){return (SYNC_MESSAGES[state]||SYNC_MESSAGES.local).replace('%n',pending).replace('%s',pending===1?'':'s');}
 /**
  * What the account control in the brand row says without being opened. Guest
  * and account data are kept deliberately separate, so the signed-in address

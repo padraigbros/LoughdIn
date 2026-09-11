@@ -142,3 +142,25 @@ test('resolveConflict refuses an unknown strategy, a missing command and a healt
   await assert.rejects(() => sync.resolveConflict(ID2), /not in conflict/);
   store.close();
 });
+
+test('an empty outbox is never reported as pending, however it was asked for', async () => {
+  // withLock asks for 'pending' when another tab holds the lock. With nothing
+  // queued that put an amber dot and "0 changes pending" on a healthy account.
+  const store = harness([], async () => ({outcome: 'applied'}));
+  const statuses = [];
+  const sync = createSync({store, client: store, now: () => 0, onStatus: s => statuses.push(s),
+    locks: {request: async () => null}, eventTarget: null});
+  await sync.flush();
+  assert.equal(sync.getStatus().pending, 0);
+  assert.equal(sync.getStatus().state, 'synced', 'nothing queued is nothing to be pending on');
+  assert.ok(!statuses.some(s => s.state === 'pending' && s.pending === 0), 'and it never said so on the way');
+});
+
+test('work that is genuinely queued still reports as pending', async () => {
+  const store = harness([command()], async () => ({outcome: 'applied'}));
+  const sync = createSync({store, client: store, now: () => 0,
+    locks: {request: async () => null}, eventTarget: null});
+  await sync.flush();
+  assert.equal(sync.getStatus().state, 'pending', 'a busy lock elsewhere does not make the work vanish');
+  assert.equal(sync.getStatus().pending, 1);
+});
