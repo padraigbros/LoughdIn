@@ -20,9 +20,9 @@ test('existing screen persists capture, focus transitions, matrix edits and cale
   let app,observer;try{
     app=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
     assert.equal(app.authRedirectURL('https://padraigbros.github.io/LoughdIn/index.html?code=secret#token'),'https://padraigbros.github.io/LoughdIn/');
-    assert.equal(app.recoveryPasswordError('short','short'),'Use at least 8 characters.');
-    assert.equal(app.recoveryPasswordError('long-enough','different'),'Passwords do not match.');
-    assert.equal(app.recoveryPasswordError('long-enough','long-enough'),'');
+    assert.equal(app.newPasswordError('short','short'),'Use at least 8 characters.');
+    assert.equal(app.newPasswordError('long-enough','different'),'Passwords do not match.');
+    assert.equal(app.newPasswordError('long-enough','long-enough'),'');
     observer=createStore({namespace:'guest'});await observer.open();const $=id=>document.getElementById(id);
     assert.equal(document.querySelectorAll('#scene-stack svg').length,3);
     $('task-input').value='Ship a small, useful improvement';await $('task-add-btn').onclick();
