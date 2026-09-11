@@ -2,7 +2,7 @@ import {SCENES,QUOTES} from './scenes.js';
 import {createStore} from './storage.js';
 import {createTimer,transition,timerDisplay,remainingMs,sessionFromTimer,nextAutomaticPhase,dailyStats,weekStats,localDateKey,createClock} from './timer.js';
 import {mountPlanner,renderPlanner,validateBlock} from './planner.js';
-import {createSync} from './sync.js';
+import {createSync,importSummary} from './sync.js';
 import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from './config.js';
 
 const $=id=>document.getElementById(id), uuid=()=>crypto.randomUUID();
@@ -212,14 +212,48 @@ function zen(on){$('app').classList.toggle('zen',on);const dock=$('music-dock');
 }
 const musicHome=$('music-dock').parentElement;
 function toggleZen(on){zen(on);if(!on)musicHome.append($('music-dock'));$(on?'zen-exit-btn':'btn-zen').focus();}
+/**
+ * The one route from trying the app to keeping what you made, so it says what
+ * it is about to do before doing it: the first press reads the guest namespace
+ * and reports what is there, the second brings it across. The snapshot read for
+ * the count is the one imported, so the number shown is the number that lands.
+ */
+function importGuestButton(err,note){
+  const button=element('button',{class:'subtle-btn'},'Import guest data');
+  let pending=null;
+  const reset=()=>{pending=null;button.textContent='Import guest data';};
+  button.onclick=async()=>{
+    button.disabled=true;
+    try{
+      if(pending){
+        const snapshot=pending;reset();
+        const result=await sync.importGuest(snapshot);
+        err.textContent='';note.textContent='Imported '+importSummary(result)+'. Your guest tasks are still on this device too.';
+        // The import has already queued the work and asked for a flush. A
+        // connection that is not there yet belongs in the sync status line, not
+        // in an error that reads as if the import had failed.
+        return;
+      }
+      const guest=createStore({namespace:'guest'});
+      let snapshot;
+      try{await guest.open();snapshot=await guest.readState();}finally{guest.close();}
+      const counts=await sync.previewGuestImport(snapshot);
+      err.textContent='';
+      const summary=importSummary(counts);
+      if(!summary){note.textContent='Nothing on this device is waiting to be imported.';return;}
+      pending=snapshot;button.textContent='Bring across '+summary;
+      note.textContent='Anything you have already imported is left out, so nothing arrives twice.';
+    }catch(e){reset();note.textContent='';err.textContent=e.message;}
+    finally{button.disabled=false;}
+  };
+  return button;
+}
 async function accountDialog(){
   const {d,err,note,actions,show}=dialog(account?'Your account':'Sign in');
   if(!client){d.insertBefore(element('p',{},'Tasks are saved on this device. Cloud sync is unavailable until the connection can open.'),err);show();return;}
   if(account){
     d.insertBefore(element('p',{},'Signed in as '+(account.email||'your account')+'. Your account data is separate from guest data.'),err);
-    const importButton=element('button',{class:'subtle-btn'},'Import guest data');
-    importButton.onclick=async()=>{importButton.disabled=true;let guest;try{guest=createStore({namespace:'guest'});await guest.open();const result=await sync.importGuest(await guest.readState());err.textContent='Imported '+result.tasks+' tasks, '+result.blocks+' blocks and '+result.sessions+' sessions.';await sync.flush();}catch(e){err.textContent=e.message;}finally{guest?.close();importButton.disabled=false;}};
-    actions.append(importButton);
+    actions.append(importGuestButton(err,note));
     const retry=element('button',{class:'subtle-btn'},'Sync now');retry.onclick=async()=>{try{await sync.flush();}catch(e){err.textContent=e.message;}};actions.append(retry);
     const out=element('button',{class:'subtle-btn'},'Sign out');out.onclick=async()=>{out.disabled=true;try{const result=await client.auth.signOut();if(result.error)throw result.error;d.close();}catch(e){err.textContent=e.message;out.disabled=false;}};actions.append(out);
     show();

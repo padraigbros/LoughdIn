@@ -339,6 +339,78 @@ function createTransport(client) {
  * Creates one serialized sync worker. The caller decides whether an authenticated
  * account may start it; guest namespaces are never uploaded automatically here.
  */
+const IMPORT_LISTS = ['work', 'personal'];
+
+function taskList(state, list) {
+  return Array.isArray(state?.tasks?.[list]) ? state.tasks[list] : [];
+}
+
+function idSet(records) {
+  return new Set((Array.isArray(records) ? records : []).map((record) => record?.id).filter(Boolean));
+}
+
+function localTimeZone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    return 'UTC';
+  }
+}
+
+/**
+ * Chooses what a signed-in account should take from the guest namespace.
+ *
+ * Ids come across unchanged. They are UUIDs, so they cannot collide with the
+ * account's own records, and keeping them means importing the same guest data
+ * again, or from a second device, lands on the rows already there rather than a
+ * duplicate of everything. That is also what makes a repeat import safe: a
+ * record the account already holds is left out, so the second run reports
+ * nothing to do instead of refusing outright.
+ *
+ * Deleted guest records are not resurrected, and a block or session whose task
+ * is neither coming across nor already in the account is left behind rather
+ * than imported as an orphan the planner cannot draw.
+ */
+export function planGuestImport(guestState, accountState) {
+  const known = new Set();
+  for (const list of IMPORT_LISTS) for (const task of taskList(accountState, list)) known.add(task?.id);
+  const tasks = [];
+  for (const list of IMPORT_LISTS) {
+    for (const task of taskList(guestState, list)) {
+      if (!task?.id || task.deletedAt || known.has(task.id)) continue;
+      known.add(task.id);
+      tasks.push({ list, task: clone(task) });
+    }
+  }
+  const heldBlocks = idSet(accountState?.blocks);
+  const blocks = (Array.isArray(guestState?.blocks) ? guestState.blocks : [])
+    .filter((block) => block?.id && !block.deletedAt && !heldBlocks.has(block.id) && known.has(block.taskId))
+    .map(clone);
+  const heldSessions = idSet(accountState?.sessions);
+  const sessions = (Array.isArray(guestState?.sessions) ? guestState.sessions : [])
+    .filter((session) => session?.id && !heldSessions.has(session.id) && (!session.taskId || known.has(session.taskId)))
+    .map(clone);
+  return {
+    tasks,
+    blocks,
+    sessions,
+    counts: { tasks: tasks.length, blocks: blocks.length, sessions: sessions.length },
+  };
+}
+
+export function importCount(counts) {
+  return (counts?.tasks || 0) + (counts?.blocks || 0) + (counts?.sessions || 0);
+}
+
+/** "3 tasks and 1 session", leaving out what there is none of. */
+export function importSummary(counts = {}) {
+  const parts = [['task', counts.tasks], ['time block', counts.blocks], ['session', counts.sessions]]
+    .filter(([, count]) => count > 0)
+    .map(([noun, count]) => `${count} ${noun}${count === 1 ? '' : 's'}`);
+  if (!parts.length) return '';
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+}
+
 export function createSync({
   store,
   client,
@@ -350,6 +422,7 @@ export function createSync({
   retryCapMs = RETRY_CAP_MS,
   eventTarget = globalThis.window,
   locks = globalThis.navigator?.locks,
+  createId = () => store?.createId?.() || globalThis.crypto?.randomUUID?.(),
 } = {}) {
   if (!store || !client) throw new TypeError('createSync requires store and client');
   const transport = createTransport(client);
@@ -710,12 +783,95 @@ export function createSync({
     schedule(0);
   }
 
+
+  /**
+   * Commands minted together share a createdAt, so push() would otherwise order
+   * them by opId alone and could send a block before the task it names. Each
+   * block and session is pinned behind its task's command instead.
+   */
+  function importCommands(plan, deviceId, timeZone) {
+    const taskOpId = new Map();
+    const commands = [];
+    const mint = (kind, entityId, payload, afterOpId) => {
+      const opId = createId();
+      if (!opId) throw new TypeError('Guest import needs an id source');
+      const command = { protocol: 1, opId, deviceId, kind, entityId, baseRevision: 0, payload };
+      if (afterOpId) command.afterOpId = afterOpId;
+      commands.push(command);
+      return opId;
+    };
+    for (const { list, task } of plan.tasks) {
+      taskOpId.set(task.id, mint('task.create', task.id, {
+        text: task.text,
+        done: !!task.done,
+        priority: task.priority,
+        list,
+        quadrant: task.quadrant ?? null,
+        details: task.details || '',
+        estimateMinutes: task.estimateMinutes,
+        nextAction: task.nextAction || '',
+      }));
+    }
+    for (const block of plan.blocks) {
+      mint('block.create', block.id, {
+        taskId: block.taskId,
+        startsAt: block.startAt,
+        endsAt: block.endAt,
+        timeZone,
+      }, taskOpId.get(block.taskId));
+    }
+    for (const session of plan.sessions) {
+      mint('session.record', session.id, {
+        taskId: session.taskId ?? null,
+        mode: session.mode,
+        startedAt: new Date(session.startedAt).toISOString(),
+        endedAt: new Date(session.endedAt).toISOString(),
+        focusMs: session.focusMs,
+        interruptions: session.interruptions || 0,
+        outcome: session.outcome,
+      }, session.taskId ? taskOpId.get(session.taskId) : undefined);
+    }
+    return commands;
+  }
+
+  /** What an import would bring across, without bringing it. */
+  async function previewGuestImport(guestState) {
+    return planGuestImport(guestState, await store.readState()).counts;
+  }
+
+  /**
+   * Carries the guest namespace into this account. The sign-in dialog promises
+   * this directly, and it is the only route from trying the app to keeping what
+   * you made.
+   *
+   * Guest data is left where it is: clearing it would take away the fallback if
+   * the person signs out again, and nothing here needs it gone. The local
+   * records and every command land in one store transaction, so an import that
+   * fails part way leaves the account exactly as it was rather than half filled.
+   */
+  async function importGuest(guestState) {
+    const plan = planGuestImport(guestState, await store.readState());
+    if (!importCount(plan.counts)) return { ...plan.counts };
+    const deviceId = (await store.getDeviceId?.()) || null;
+    const commands = importCommands(plan, deviceId, localTimeZone());
+    await store.mutate((draft) => {
+      for (const { list, task } of plan.tasks) draft.tasks[list].push({ ...task, revision: 0 });
+      for (const block of plan.blocks) draft.blocks.push({ ...block, revision: 0 });
+      for (const session of plan.sessions) draft.sessions.push({ ...session });
+    }, { commands });
+    await refreshStatus();
+    schedule(0);
+    return { ...plan.counts };
+  }
+
   return {
     start,
     stop,
     flush,
     listConflicts,
     resolveConflict,
+    previewGuestImport,
+    importGuest,
     getStatus: () => clone(status),
   };
 }

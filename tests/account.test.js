@@ -12,7 +12,7 @@ let mounts = 0;
 
 // The signed-out journey is all client calls, so the app is mounted over a
 // stub Supabase client and the replies are set per test.
-function stubClient(replies = {}) {
+function stubClient(replies = {}, session = null) {
   const calls = [];
   const record = (name, fallback) => async (...args) => {
     calls.push({name, args});
@@ -20,9 +20,15 @@ function stubClient(replies = {}) {
   };
   return {
     calls,
+    // Signed in, sync starts for real, so the account dialog needs a transport
+    // that answers rather than one that throws under every button.
+    rpc: async name => ({
+      data: name === 'pull_changes' ? {changes: [], cursor: 0, epoch: 1} : {outcome: 'applied'},
+      error: null,
+    }),
     auth: {
       onAuthStateChange: () => ({data: {subscription: {unsubscribe() {}}}}),
-      getSession: async () => ({data: {session: null}, error: null}),
+      getSession: async () => ({data: {session}, error: null}),
       stopAutoRefresh() {},
       signInWithPassword: record('signInWithPassword', {data: {session: {}}, error: null}),
       signUp: record('signUp', {data: {session: null, user: {}}, error: null}),
@@ -342,5 +348,57 @@ test('a genuinely wrong password still reports as an error', async () => {
     assert.equal(textOf('h2'), 'Sign in');
     assert.equal(textOf('.dialog-error'), 'Invalid login credentials');
     assert.equal(textOf('.dialog-notice'), '');
+  } finally { await harness.dispose(); }
+});
+
+const ACCOUNT = {id: '44444444-0000-4000-8000-000000000001', email: 'aoife@example.test'};
+const GUEST_TASK = '55555555-0000-4000-8000-000000000001';
+const buttonNamed = text => [...dialogOf().querySelectorAll('.dialog-actions button')]
+  .find(b => b.textContent.startsWith(text));
+
+test('importing guest data says what it will bring, then brings it', async () => {
+  const harness = await mount(stubClient({}, {user: ACCOUNT}));
+  try {
+    await settle();
+    // The guest namespace as someone who tried the app would leave it.
+    const {createStore} = await import('../src/storage.js');
+    const guest = createStore({namespace: 'guest', BroadcastChannel: null});
+    await guest.open();
+    await guest.mutate(draft => {
+      draft.tasks.work.push({
+        id: GUEST_TASK, text: 'Something I made as a guest', done: false, priority: 'med',
+        poms: 0, quadrant: null, details: '', nextAction: '', estimateMinutes: 25,
+        createdAt: '2026-09-10T09:00:00.000Z', updatedAt: '2026-09-10T09:00:00.000Z',
+        deletedAt: null, revision: 0,
+      });
+    });
+    guest.close();
+
+    await document.getElementById('btn-account').onclick();
+    assert.equal(textOf('h2'), 'Your account');
+    const button = buttonNamed('Import guest data');
+    assert.ok(button, 'the import control is there');
+
+    await button.onclick();
+    assert.equal(button.textContent, 'Bring across 1 task', 'the first press counts, it does not commit');
+    assert.equal(textOf('.dialog-error'), '', 'and says nothing in the error line');
+
+    await button.onclick();
+    await settle();
+    assert.equal(textOf('.dialog-error'), '');
+    assert.match(textOf('.dialog-notice'), /^Imported 1 task\./);
+    assert.equal(button.textContent, 'Import guest data', 'the control goes back to offering an import');
+  } finally { await harness.dispose(); }
+});
+
+test('an empty guest namespace is reported rather than imported', async () => {
+  const harness = await mount(stubClient({}, {user: ACCOUNT}));
+  try {
+    await settle();
+    await document.getElementById('btn-account').onclick();
+    const button = buttonNamed('Import guest data');
+    await button.onclick();
+    assert.equal(textOf('.dialog-notice'), 'Nothing on this device is waiting to be imported.');
+    assert.equal(button.textContent, 'Import guest data', 'nothing to confirm');
   } finally { await harness.dispose(); }
 });
