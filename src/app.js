@@ -23,18 +23,22 @@ export function syncMessage(state,pending=0){return (SYNC_MESSAGES[state]||SYNC_
  * has to be legible during normal use rather than only inside the dialog.
  */
 export function accountSummary(account,sync={},available=true){
-  if(!account)return {initial:'',tone:'idle',badge:'',title:available
+  if(!account)return {initial:'',tone:'idle',badge:'',dot:false,title:available
     ?'Not signed in. Tasks stay on this device. Open to sign in and sync across devices.'
     :'Not signed in. Cloud sync is unavailable, so tasks are saved on this device.'};
   const initial=(account.email||'').trim().charAt(0).toUpperCase()||'?';
   const email=account.email||'Your account';
-  if(!available)return {initial,tone:'idle',badge:'',title:email+' · cloud sync is unavailable'};
+  if(!available)return {initial,tone:'idle',badge:'',dot:false,title:email+' · cloud sync is unavailable'};
   const state=sync.state||'local';
   const pending=sync.pending||0;
   return {
     initial,
     tone:SYNC_TONES[state]||'idle',
     badge:state==='conflict'||state==='error'?'!':pending>0?String(Math.min(pending,9)):'',
+    // The dot is the sync state. There is no sync to report without an account
+    // reaching a server, and a grey dot carrying nothing reads as an unread
+    // count, so it is shown only when it means something.
+    dot:true,
     title:email+' · '+syncMessage(state,pending),
   };
 }
@@ -79,7 +83,7 @@ function renderAccount(){
   const glyph=button.querySelector('.account-glyph');
   if(summary.initial)glyph.textContent=summary.initial;else glyph.innerHTML=GUEST_GLYPH;
   button.dataset.tone=summary.tone;button.title=summary.title;button.setAttribute('aria-label',summary.title);
-  button.querySelector('.account-dot').textContent=summary.badge;
+  const dot=button.querySelector('.account-dot');dot.textContent=summary.badge;dot.hidden=!summary.dot;
 }
 async function openStore(namespace){
   unsubscribe?.();store?.close();store=createStore({namespace});const opened=await store.open();
@@ -407,7 +411,64 @@ function events(){
   $('btn-history').onclick=sessionHistory;$('btn-backup').onclick=backups;$('btn-account').onclick=accountDialog;
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){clock.resync();tick();}});window.addEventListener('pageshow',()=>{clock.resync();tick();});
 }
-async function serviceWorker(){if(!('serviceWorker'in navigator))return;const registration=await navigator.serviceWorker.register('sw.js');const offer=()=>{if(!registration.waiting)return;const b=element('button',{class:'subtle-btn'},'Update available · reload');b.onclick=()=>registration.waiting?.postMessage({type:'SKIP_WAITING'});document.querySelector('.account-actions').append(b);};offer();registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',offer));navigator.serviceWorker.addEventListener('controllerchange',()=>location.reload());}
+/**
+ * Takes a downloaded update rather than waiting to be asked.
+ *
+ * The worker never calls skipWaiting on itself, so a new one sits waiting while
+ * the old one keeps serving the shell from its own cache. Refreshing does not
+ * dislodge it: the waiting worker is still waiting on the next load, and the
+ * next, so someone who reloads and sees no change has no way forward and every
+ * reason to conclude the release never happened. Choosing the moment is this
+ * side's job, and the answer has to be better than a button in the footer.
+ *
+ * Taking one costs a reload, so the question is only ever what that reload
+ * would interrupt. When the answer is nothing, it is taken there and then.
+ */
+async function serviceWorker(){
+  if(!('serviceWorker'in navigator))return;
+  const registration=await navigator.serviceWorker.register('sw.js');
+  // A worker claiming a page that had none is this visit's own first install.
+  // Nothing on screen is stale, so there is nothing to reload for.
+  const hadController=!!navigator.serviceWorker.controller;
+  let reloading=false,taken=false,touched=false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!hadController||reloading)return;
+    reloading=true;location.reload();
+  });
+  for(const type of ['pointerdown','keydown'])
+    document.addEventListener(type,()=>{touched=true;},{capture:true,once:true});
+  // Everything this app holds is already durable. A reload can only destroy a
+  // save still in flight and text typed into the task box but not yet added.
+  const losesWork=()=>busy||!!$('task-input').value.trim();
+  // Losing your place counts as well, so a session under way and an open dialog
+  // hold an update off for as long as someone is looking at the page.
+  const inTheMiddle=()=>losesWork()||state?.timer?.status==='running'||!!document.querySelector('dialog[open]');
+  const take=()=>{
+    if(!registration.waiting||taken)return;
+    taken=true;registration.waiting.postMessage({type:'SKIP_WAITING'});
+  };
+  // Switched away, a reload is unseen and only has to avoid destroying work.
+  // Still watching, it also has to find someone who has not started anything:
+  // an update downloaded before the page opened, or during the seconds after
+  // it, has interrupted nothing at all.
+  const consider=()=>{
+    if(!registration.waiting||taken)return;
+    if(document.hidden?!losesWork():!touched&&!inTheMiddle())take();
+  };
+  const notice=element('button',{class:'subtle-btn update-btn'},'Update ready · reload');
+  notice.onclick=take;
+  // Whatever is left is someone mid-something, who is asked rather than
+  // interrupted, and who gets it anyway the moment they switch away.
+  function arrived(){
+    if(!registration.waiting)return;
+    consider();
+    if(taken||notice.isConnected)return;
+    document.querySelector('.account-actions').append(notice);
+  }
+  document.addEventListener('visibilitychange',consider);
+  registration.addEventListener('updatefound',()=>registration.installing?.addEventListener('statechange',arrived));
+  arrived();
+}
 setupShell();scenery();music();events();
 await openStore('guest').catch(fail);await auth().catch(fail);serviceWorker().catch(()=>status('Offline installation unavailable. Your tasks are saved locally.'));
 timerInterval=setInterval(tick,500);
