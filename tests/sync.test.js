@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {IDBFactory} from 'fake-indexeddb';
 import {createSync} from '../src/sync.js';
+import {createStore} from '../src/storage.js';
 
 const ID = '10000000-0000-4000-8000-000000000001';
 function harness(commands, applyCommand) {
@@ -52,54 +54,91 @@ test('retryable transport failure preserves pending work with retry metadata', a
   sync.stop();
 });
 
+// Conflict resolution runs against the real store, not the fake above. The
+// fake accepts any patch, while the real outbox refuses to rebase a command the
+// server has already ruled on, which is the whole constraint being worked
+// around here. The receipt is the one private.save_conflict actually builds.
 const ID2 = '10000000-0000-4000-8000-000000000002';
-function conflicted(receipt) {
-  const head = command(ID, {text: 'Mine'});
-  const dependent = {...command(ID2, {text: 'Later'}), afterOpId: ID, createdAt: '2026-09-10T00:00:01.000Z'};
-  const commands = [head, dependent];
-  const store = harness(commands, async () => receipt);
-  return {commands, store, sync: createSync({store, client: store, now: () => 0})};
+const ID3 = '10000000-0000-4000-8000-000000000003';
+const TASK = '10000000-0000-4000-8000-000000000009';
+
+function serverConflict(opId, {reason = 'stale_text', revision = 9} = {}) {
+  return {
+    protocol: 1, opId, outcome: 'conflict', sequence: 5,
+    entityType: 'task', entityId: TASK, revision,
+    conflict: {id: ID3, reason, current: {text: 'Theirs'}, proposed: {text: 'Mine'}},
+  };
+}
+
+// A head command that conflicts, and a later edit to the same task queued
+// behind it, which is how storage links commands sharing an entity.
+async function conflicted(applyCommand) {
+  let next = 100;
+  const store = createStore({
+    indexedDB: new IDBFactory(), localStorage: {getItem: () => null},
+    namespace: 'guest', BroadcastChannel: null,
+    now: () => new Date('2026-09-10T12:00:00.000Z'),
+    createUuid: () => `10000000-0000-4000-8000-000000000${next++}`,
+  });
+  await store.open();
+  await store.mutate(() => {}, {
+    command: {opId: ID, kind: 'task.update', entityId: TASK, baseRevision: 0, payload: {text: 'Mine'}},
+  });
+  await store.mutate(() => {}, {
+    command: {opId: ID2, kind: 'task.update', entityId: TASK, baseRevision: 0, payload: {estimateMinutes: 50}},
+  });
+  const sync = createSync({store, client: {applyCommand}, now: () => 0});
+  await sync.flush();
+  return {store, sync};
 }
 
 test('listConflicts reports the server account of a refused command', async () => {
-  const {sync} = conflicted({outcome: 'conflict', reason: 'stale title', entityType: 'task',
-    currentRevision: 7, proposed: {text: 'Mine'}, current: {text: 'Theirs'}});
-  await sync.flush();
+  const {sync} = await conflicted(async wire => serverConflict(wire.opId, {revision: 7}));
   const conflicts = await sync.listConflicts();
   const head = conflicts.find(c => c.opId === ID);
-  assert.equal(head.reason, 'stale title');
+  assert.equal(head.reason, 'stale_text');
   assert.equal(head.entityType, 'task');
   assert.equal(head.currentRevision, 7);
   assert.deepEqual(head.current, {text: 'Theirs'});
+  assert.deepEqual(head.proposed, {text: 'Mine'});
   assert.equal(conflicts.find(c => c.opId === ID2).blockedBy, ID);
 });
 
-test('resolving to the server version discards the command and everything behind it', async () => {
-  const {commands, sync} = conflicted({outcome: 'conflict', reason: 'stale title'});
-  await sync.flush();
-  assert.equal(commands.length, 2);
+test('resolving to the server version drops the command and rebases what was behind it', async () => {
+  const {store, sync} = await conflicted(async wire => serverConflict(wire.opId));
   await sync.resolveConflict(ID, {strategy: 'server'});
-  assert.deepEqual(commands, []);
+  const outbox = await store.listOutbox();
+  assert.deepEqual(outbox.map(c => c.opId), [ID2], 'the refused command goes, the later edit stays');
+  assert.equal(outbox[0].status, 'pending');
+  assert.equal(outbox[0].baseRevision, 9, 'the survivor is rebased onto what the server holds');
+  assert.equal(outbox[0].predecessorOpId, null);
   assert.equal(sync.getStatus().conflicts, 0);
+  store.close();
 });
 
-test('keeping the local change rebases it and frees the commands queued behind it', async () => {
-  const {commands, sync} = conflicted({outcome: 'conflict', reason: 'stale', currentRevision: 9});
-  await sync.flush();
+test('keeping the local change resends it as a new command based on the current revision', async () => {
+  const {store, sync} = await conflicted(async wire => serverConflict(wire.opId));
   await sync.resolveConflict(ID, {strategy: 'local'});
-  assert.equal(commands[0].status, 'pending');
-  assert.equal(commands[0].baseRevision, 9);
-  assert.equal(commands[0].serverReceipt, null);
-  assert.equal(commands[1].status, 'pending');
-  assert.equal(commands[1].lastError, null);
+  const outbox = await store.listOutbox();
+  const replacement = outbox.find(c => c.opId !== ID2);
+  assert.ok(replacement, 'the local edit is requeued');
+  assert.notEqual(replacement.opId, ID, 'the protocol forbids resending a ruled-on operation');
+  assert.equal(replacement.status, 'pending');
+  assert.equal(replacement.baseRevision, 9);
+  assert.deepEqual(replacement.payload, {text: 'Mine'});
+  assert.equal(replacement.serverReceipt, undefined);
+  const dependent = outbox.find(c => c.opId === ID2);
+  assert.equal(dependent.status, 'pending', 'the edit behind it is freed');
+  assert.equal(dependent.predecessorOpId, replacement.opId, 'and stays behind the replacement');
+  store.close();
 });
 
 test('resolveConflict refuses an unknown strategy, a missing command and a healthy one', async () => {
-  const commands = [command(), {...command(ID2), createdAt: '2026-09-10T00:00:01.000Z'}];
-  const store = harness(commands, async wire =>
-    wire.opId === ID ? {outcome: 'conflict', reason: 'stale'} : {outcome: 'applied'});
-  const sync = createSync({store, client: store, now: () => 0});
-  await sync.flush();
+  const {store, sync} = await conflicted(async wire =>
+    wire.opId === ID ? serverConflict(wire.opId) : {outcome: 'applied'});
   await assert.rejects(() => sync.resolveConflict(ID, {strategy: 'guess'}), TypeError);
-  await assert.rejects(() => sync.resolveConflict('nope'), /No queued command/);
+  await assert.rejects(() => sync.resolveConflict(ID3), /No queued command/);
+  await sync.resolveConflict(ID, {strategy: 'server'});
+  await assert.rejects(() => sync.resolveConflict(ID2), /not in conflict/);
+  store.close();
 });
