@@ -1,96 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
-import {readFile} from 'node:fs/promises';
-import {fileURLToPath} from 'node:url';
-import path from 'node:path';
-import {JSDOM} from 'jsdom';
-import {IDBFactory} from 'fake-indexeddb';
-import {build} from 'esbuild';
+import {mount, stubClient, settle} from './helpers/mount-app.mjs';
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-let mounts = 0;
-
-// The signed-out journey is all client calls, so the app is mounted over a
-// stub Supabase client and the replies are set per test.
-function stubClient(replies = {}, session = null) {
-  const calls = [];
-  const record = (name, fallback) => async (...args) => {
-    calls.push({name, args});
-    return (replies[name] ? await replies[name](...args) : fallback);
-  };
-  return {
-    calls,
-    // Signed in, sync starts for real, so the account dialog needs a transport
-    // that answers rather than one that throws under every button.
-    rpc: async name => ({
-      data: name === 'pull_changes' ? {changes: [], cursor: 0, epoch: 1} : {outcome: 'applied'},
-      error: null,
-    }),
-    auth: {
-      onAuthStateChange: () => ({data: {subscription: {unsubscribe() {}}}}),
-      getSession: async () => ({data: {session}, error: null}),
-      stopAutoRefresh() {},
-      signInWithPassword: record('signInWithPassword', {data: {session: {}}, error: null}),
-      signUp: record('signUp', {data: {session: null, user: {}}, error: null}),
-      resend: record('resend', {error: null}),
-      resetPasswordForEmail: record('resetPasswordForEmail', {error: null}),
-      signOut: record('signOut', {error: null}),
-    },
-  };
-}
-
-async function mount(client) {
-  const dom = new JSDOM(await readFile(new URL('../index.html', import.meta.url), 'utf8'),
-    {url: 'https://app.example.test/LoughdIn/', pretendToBeVisual: true});
-  const originals = new Map();
-  for (const [key, value] of Object.entries({
-    window: dom.window, document: dom.window.document, navigator: dom.window.navigator,
-    location: dom.window.location, localStorage: dom.window.localStorage, Option: dom.window.Option,
-    indexedDB: new IDBFactory(), BroadcastChannel: undefined,
-  })) {
-    originals.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
-    Object.defineProperty(globalThis, key, {value, configurable: true, writable: true});
-  }
-  dom.window.HTMLDialogElement.prototype.showModal = function () { this.open = true; };
-  dom.window.HTMLDialogElement.prototype.close = function () {
-    this.open = false;
-    this.dispatchEvent(new dom.window.Event('close'));
-  };
-  const bundle = await build({
-    absWorkingDir: appRoot, entryPoints: ['src/app.js'], bundle: true, write: false,
-    format: 'esm', platform: 'browser', target: 'es2022',
-    plugins: [{
-      name: 'account-fixture',
-      setup(builder) {
-        builder.onResolve({filter: /config\.js$/}, () => ({path: 'config', namespace: 'fixture'}));
-        builder.onResolve({filter: /vendor\/supabase\.js$/}, () => ({path: 'supabase', namespace: 'fixture'}));
-        builder.onLoad({filter: /.*/, namespace: 'fixture'}, args => ({
-          contents: args.path === 'config'
-            ? "export const SUPABASE_URL='https://stub.test';export const SUPABASE_PUBLISHABLE_KEY='stub-key';"
-            : 'export const createClient=()=>globalThis.__stubClient;',
-          loader: 'js',
-        }));
-      },
-    }],
-  });
-  globalThis.__stubClient = client;
-  // Identical sources would resolve to one data: URL and Node would hand back
-  // the cached module, so the second mount would never build its own DOM.
-  const source = bundle.outputFiles[0].text + `\n//${mounts++}\n`;
-  const app = await import('data:text/javascript;base64,' + Buffer.from(source).toString('base64'));
-  return {
-    app,
-    window: dom.window,
-    async dispose() {
-      await app.disposeApp();
-      dom.window.close();
-      delete globalThis.__stubClient;
-      for (const [key, value] of originals) {
-        if (value) Object.defineProperty(globalThis, key, value); else delete globalThis[key];
-      }
-    },
-  };
-}
 
 const dialogOf = () => document.querySelector('dialog[open]');
 const primaryOf = () => dialogOf().querySelector('.dialog-actions .t-btn-primary');
@@ -98,7 +9,6 @@ const linkNamed = text => [...dialogOf().querySelectorAll('.auth-link')].find(b 
 const fieldNamed = label => [...dialogOf().querySelectorAll('.auth-body label')]
   .find(l => l.textContent.startsWith(label)).querySelector('input');
 const textOf = selector => dialogOf().querySelector(selector).textContent;
-const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 
 test('the account control sits beside settings and reports sync without being opened', async () => {
   const harness = await mount(stubClient());
@@ -114,12 +24,16 @@ test('the account control sits beside settings and reports sync without being op
     const {accountSummary} = harness.app;
     const account = {email: 'aoife@example.test'};
     assert.deepEqual(accountSummary(null), {
-      initial: '', tone: 'idle', badge: '',
+      initial: '', tone: 'idle', badge: '', dot: false,
       title: 'Not signed in. Tasks stay on this device. Open to sign in and sync across devices.',
     });
     assert.deepEqual(accountSummary(account, {state: 'synced'}), {
-      initial: 'A', tone: 'ok', badge: '', title: 'aoife@example.test · All changes synced',
+      initial: 'A', tone: 'ok', badge: '', dot: true, title: 'aoife@example.test · All changes synced',
     });
+    // The dot is the sync state, so it says nothing when there is no sync to
+    // report, where a grey dot carrying nothing would read as an unread count.
+    assert.equal(document.querySelector('.account-dot').hidden, true, 'signed out shows no dot');
+    assert.equal(accountSummary(account, {state: 'local'}, false).dot, false, 'nor does sync being unavailable');
     const pending = accountSummary(account, {state: 'pending', pending: 3});
     assert.equal(pending.badge, '3', 'unsent work is counted on the control');
     assert.equal(pending.title, 'aoife@example.test · Saved on this device · 3 changes pending');

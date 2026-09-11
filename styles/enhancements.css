@@ -28,3 +28,4 @@ dialog{color:#f4f4ef;background:#20281ff5;border:1px solid #ffffff35;border-radi
 .auth-foot{margin-top:16px}.auth-foot .auth-aside{margin:0!important;padding-top:14px;border-top:1px solid #ffffff1f;font-size:12px!important}
 .auth-reveal{display:flex!important;align-items:center;gap:8px;font-size:12px;margin-top:12px!important}
 .auth-reveal input{margin:0!important}
+.update-btn{border-color:#8fc98a80!important;color:#d8ecd2!important;background:#8fc98a1f!important}
