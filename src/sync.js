@@ -445,7 +445,12 @@ export function createSync({
     const conflicts = outbox.filter((command) => command.status === 'conflict').length;
     const errors = outbox.filter((command) => command.status === 'error').length;
     const pending = outbox.filter((command) => ACTIVE_OUTBOX_STATUSES.has(command.status)).length;
-    const state = conflicts ? 'conflict' : errors ? 'error' : pending ? (preferred || 'pending') : (preferred || 'synced');
+    // `preferred` says why we are looking, not that there is work to do. An
+    // empty outbox has nothing to be pending on, and a caller that asks for
+    // 'pending' anyway is what put "0 changes pending" under a healthy account
+    // and left an amber dot on it until something else happened to republish.
+    const idle = preferred === 'pending' ? 'synced' : (preferred || 'synced');
+    const state = conflicts ? 'conflict' : errors ? 'error' : pending ? (preferred || 'pending') : idle;
     publish(state, { pending, conflicts, error: errors ? status.error : null });
     return outbox;
   }

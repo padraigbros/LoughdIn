@@ -37,6 +37,8 @@ test('the account control sits beside settings and reports sync without being op
     const pending = accountSummary(account, {state: 'pending', pending: 3});
     assert.equal(pending.badge, '3', 'unsent work is counted on the control');
     assert.equal(pending.title, 'aoife@example.test · Saved on this device · 3 changes pending');
+    assert.equal(accountSummary(account, {state: 'pending', pending: 1}).title,
+      'aoife@example.test · Saved on this device · 1 change pending', 'one change is not 1 changes');
     assert.equal(accountSummary(account, {state: 'conflict'}).badge, '!');
     assert.equal(accountSummary(account, {state: 'conflict'}).tone, 'alert');
     assert.equal(accountSummary(account, {state: 'pending', pending: 40}).badge, '9', 'the badge stays one character');
