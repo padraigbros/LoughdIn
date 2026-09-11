@@ -9,10 +9,35 @@ const $=id=>document.getElementById(id), uuid=()=>crypto.randomUUID();
 const clock=createClock();
 let timerInterval,quoteInterval,authSubscription;
 let store,state,unsubscribe,deviceId,account=null,sync=null,client=null,list='work',view='list',busy=false,completing=false;
+let syncState={state:'local',pending:0};
 const activeTasks=s=>Object.entries(s.tasks).flatMap(([list,tasks])=>tasks.filter(t=>!t.deletedAt).map(t=>({...t,list})));
 const findTask=(s,id)=>Object.values(s.tasks).flat().find(t=>t.id===id&&!t.deletedAt);
 const selected=s=>activeTasks(s).find(t=>t.id===s.activeTask)||null;
 function element(tag,attrs={},text=''){const el=document.createElement(tag);for(const [key,value] of Object.entries(attrs))el.setAttribute(key,value);el.textContent=text;return el;}
+const SYNC_MESSAGES={local:'Saved on this device',syncing:'Saved on this device · syncing…',pending:'Saved on this device · %n changes pending',offline:'Offline · saved on this device',auth:'Saved on this device · sign in to sync',conflict:'Saved on this device · open your account to resolve changes',error:'Saved on this device · sync needs attention',synced:'All changes synced'};
+const SYNC_TONES={synced:'ok',syncing:'work',pending:'work',local:'idle',offline:'idle',auth:'warn',conflict:'alert',error:'alert'};
+export function syncMessage(state,pending=0){return (SYNC_MESSAGES[state]||SYNC_MESSAGES.local).replace('%n',pending);}
+/**
+ * What the account control in the brand row says without being opened. Guest
+ * and account data are kept deliberately separate, so the signed-in address
+ * has to be legible during normal use rather than only inside the dialog.
+ */
+export function accountSummary(account,sync={},available=true){
+  if(!account)return {initial:'',tone:'idle',badge:'',title:available
+    ?'Not signed in. Tasks stay on this device. Open to sign in and sync across devices.'
+    :'Not signed in. Cloud sync is unavailable, so tasks are saved on this device.'};
+  const initial=(account.email||'').trim().charAt(0).toUpperCase()||'?';
+  const email=account.email||'Your account';
+  if(!available)return {initial,tone:'idle',badge:'',title:email+' · cloud sync is unavailable'};
+  const state=sync.state||'local';
+  const pending=sync.pending||0;
+  return {
+    initial,
+    tone:SYNC_TONES[state]||'idle',
+    badge:state==='conflict'||state==='error'?'!':pending>0?String(Math.min(pending,9)):'',
+    title:email+' · '+syncMessage(state,pending),
+  };
+}
 function status(text,error=false){$('save-status').textContent=text;$('save-status').dataset.error=String(error);}
 function fail(error){console.error(error);status(error.message||'Unable to save. Your last saved data is preserved.',true);}
 function command(kind,entityId,payload,baseRevision=0){return {protocol:1,opId:uuid(),deviceId,kind,entityId,baseRevision,payload};}
@@ -31,14 +56,30 @@ function setupShell(){
   const toolbar=element('div',{class:'view-toolbar','aria-label':'Task view'});
   for(const name of ['list','matrix','plan']){const b=element('button',{'data-view':name,'aria-pressed':String(name===view)},name[0].toUpperCase()+name.slice(1));b.onclick=()=>{view=name;render();};toolbar.append(b);}
   $('task-list').before(toolbar);$('task-list').after(element('div',{id:'planning-view',hidden:''}));
+  // Who you are signed in as and whether sync is working are ambient, not
+  // occasional, so the control sits beside settings and carries both at a
+  // glance rather than only once a dialog is open.
+  const accountBtn=element('button',{class:'brand-btn account-btn',id:'btn-account','aria-haspopup':'dialog'});
+  accountBtn.append(element('span',{class:'account-glyph'}),element('span',{class:'account-dot','aria-hidden':'true'}));
+  $('btn-settings').before(accountBtn);
   const footer=element('div',{class:'account-actions'});
-  footer.append(element('button',{class:'subtle-btn',id:'btn-account'},'Account & sync'),element('button',{class:'subtle-btn',id:'btn-backup'},'Backup'));
+  footer.append(element('button',{class:'subtle-btn',id:'btn-backup'},'Backup'));
   const history=element('button',{class:'subtle-btn',id:'btn-history'},'Session history');footer.append(history);
   const message=element('div',{id:'save-status',class:'save-status',role:'status','aria-live':'polite'},'Opening your tasks…');
   document.querySelector('.hero-foot').before(footer,message);
   for(const mode of ['work','short','long','goal'])$('dur-'+mode).previousElementSibling.htmlFor='dur-'+mode;
   $('settings-pop').setAttribute('aria-label','Timer settings');
   mountPlanner($('planning-view'),{onViewChange:next=>{view=next;render();},onTaskUpdate:(id,patch)=>updateTask(id,patch).catch(fail),onBlockSave:saveBlock,onBlockDelete:id=>deleteBlock(id).catch(fail),onFocusTask:id=>focusTask(id).catch(fail)});
+  renderAccount();
+}
+const GUEST_GLYPH='<svg viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false"><circle cx="12" cy="8.4" r="3.5" fill="none" stroke="currentColor" stroke-width="1.7"/><path d="M5.6 19.4a6.4 6.4 0 0 1 12.8 0" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
+function renderAccount(){
+  const button=$('btn-account');if(!button)return;
+  const summary=accountSummary(account,syncState,!!client);
+  const glyph=button.querySelector('.account-glyph');
+  if(summary.initial)glyph.textContent=summary.initial;else glyph.innerHTML=GUEST_GLYPH;
+  button.dataset.tone=summary.tone;button.title=summary.title;button.setAttribute('aria-label',summary.title);
+  button.querySelector('.account-dot').textContent=summary.badge;
 }
 async function openStore(namespace){
   unsubscribe?.();store?.close();store=createStore({namespace});const opened=await store.open();
@@ -91,17 +132,21 @@ async function addTask(){
 async function updateTask(id,patch){await save(s=>{const t=findTask(s,id);if(!t)return null;const revision=t.revision||0;Object.assign(t,patch,{updatedAt:new Date().toISOString()});return {revision};},r=>command('task.update',id,patch,r.revision));}
 async function deleteTask(id){await save(s=>{const t=findTask(s,id);if(!t)return null;t.deletedAt=new Date().toISOString();if(s.activeTask===id)s.activeTask=null;for(const b of s.blocks)if(b.taskId===id&&!b.deletedAt)b.deletedAt=t.deletedAt;return {revision:t.revision||0};},r=>command('task.delete',id,{},r.revision));}
 async function focusTask(id){await save(s=>{if(!findTask(s,id))return;s.activeTask=id;if(s.timer.status==='idle')s.timer.task=selected(s);});if(state.timer.status!=='idle')status('Selected for your next session. The current session keeps its task.');}
-function dialog(title){const d=element('dialog');d.append(element('h2',{},title));const err=element('p',{class:'dialog-error',role:'alert'});const actions=element('div',{class:'dialog-actions'});const close=element('button',{class:'subtle-btn'},'Close');close.onclick=()=>d.close();actions.append(close);d.append(err,actions);document.body.append(d);d.addEventListener('close',()=>d.remove());return {d,err,actions,show:()=>d.showModal()};}
+// `note` carries waiting and success messages. Routing those through the error
+// line is what made "check your email" read like a rejected password.
+function dialog(title){const d=element('dialog');d.append(element('h2',{},title));const note=element('p',{class:'dialog-notice',role:'status'});const err=element('p',{class:'dialog-error',role:'alert'});const actions=element('div',{class:'dialog-actions'});const close=element('button',{class:'subtle-btn'},'Close');close.onclick=()=>d.close();actions.append(close);d.append(err,note,actions);document.body.append(d);d.addEventListener('close',()=>d.remove());return {d,err,note,actions,show:()=>d.showModal()};}
 function field(d,label,tag='input',attrs={}){const wrap=element('label',{},label);const input=element(tag,attrs);wrap.append(input);d.insertBefore(wrap,d.querySelector('.dialog-error'));return input;}
 export function authRedirectURL(href=location.href){const target=new URL('.',href);target.search='';target.hash='';return target.href;}
-export function recoveryPasswordError(password,confirmation){if(password.length<8)return 'Use at least 8 characters.';if(password!==confirmation)return 'Passwords do not match.';return '';}
+// Shared by account creation and password recovery: both ask for a password
+// the person has never typed before, so both ask for it twice.
+export function newPasswordError(password,confirmation){if(password.length<8)return 'Use at least 8 characters.';if(password!==confirmation)return 'Passwords do not match.';return '';}
 function passwordRecoveryDialog(){
-  const {d,err,actions,show}=dialog('Choose a new password');
+  const {d,err,note,actions,show}=dialog('Choose a new password');
   d.insertBefore(element('p',{},'Set a new password for the account that opened this recovery link.'),err);
   const password=field(d,'New password','input',{type:'password',autocomplete:'new-password',minlength:'8',required:''});
   const confirmation=field(d,'Confirm new password','input',{type:'password',autocomplete:'new-password',minlength:'8',required:''});
   const save=element('button',{class:'t-btn t-btn-primary'},'Update password');
-  save.onclick=async()=>{const validation=recoveryPasswordError(password.value,confirmation.value);if(validation){err.textContent=validation;return;}save.disabled=true;try{const result=await client.auth.updateUser({password:password.value});if(result.error)throw result.error;err.textContent='Password updated. You are signed in on this device.';password.value=confirmation.value='';}catch{err.textContent='The password could not be updated. Request a new recovery link and try again.';}finally{save.disabled=false;}};
+  save.onclick=async()=>{const validation=newPasswordError(password.value,confirmation.value);if(validation){note.textContent='';err.textContent=validation;return;}save.disabled=true;try{const result=await client.auth.updateUser({password:password.value});if(result.error)throw result.error;err.textContent='';note.textContent='Password updated. You are signed in on this device.';password.value=confirmation.value='';}catch{note.textContent='';err.textContent='The password could not be updated. Request a new recovery link and try again.';}finally{save.disabled=false;}};
   confirmation.onkeydown=e=>{if(e.key==='Enter')save.click();};actions.append(save);show();
 }
 function editTask(task){const {d,err,actions,show}=dialog('A little more clarity');
@@ -168,7 +213,7 @@ function zen(on){$('app').classList.toggle('zen',on);const dock=$('music-dock');
 const musicHome=$('music-dock').parentElement;
 function toggleZen(on){zen(on);if(!on)musicHome.append($('music-dock'));$(on?'zen-exit-btn':'btn-zen').focus();}
 async function accountDialog(){
-  const {d,err,actions,show}=dialog(account?'Your account':'Across your devices');
+  const {d,err,note,actions,show}=dialog(account?'Your account':'Sign in');
   if(!client){d.insertBefore(element('p',{},'Tasks are saved on this device. Cloud sync is unavailable until the connection can open.'),err);show();return;}
   if(account){
     d.insertBefore(element('p',{},'Signed in as '+(account.email||'your account')+'. Your account data is separate from guest data.'),err);
@@ -181,32 +226,121 @@ async function accountDialog(){
     try{const conflicts=await sync.listConflicts();for(const conflict of conflicts){const row=element('div',{class:'sync-conflict'});row.append(element('p',{},'A change needs your choice. '+(conflict.entityType||conflict.kind||'Record')));if(conflict.reason)row.append(element('p',{class:'sync-conflict-reason'},conflict.reason));const choose=async(strategy,button)=>{button.disabled=true;try{await sync.resolveConflict(conflict.opId,{strategy});row.remove();}catch(e){err.textContent=e.message;button.disabled=false;}};const server=element('button',{class:'subtle-btn'},'Use synced version');server.onclick=()=>choose('server',server);row.append(server);const mine=element('button',{class:'subtle-btn'},'Keep mine');mine.onclick=()=>choose('local',mine);row.append(mine);d.insertBefore(row,err);}}catch(e){err.textContent=e.message;}
     return;
   }
-  d.insertBefore(element('p',{},'Sign in to bring your tasks together across devices. Guest tasks stay here until you choose to import them.'),err);
-  const email=field(d,'Email','input',{type:'email',autocomplete:'email',required:''});
-  const password=field(d,'Password','input',{type:'password',autocomplete:'current-password',minlength:'8',required:''});
-  const signIn=element('button',{class:'t-btn t-btn-primary'},'Sign in');
-  const signUp=element('button',{class:'subtle-btn'},'Create account');
-  const forgot=element('button',{class:'subtle-btn'},'Forgot password');
-  async function submit(create){
-    if(!email.reportValidity()||!password.reportValidity())return;
-    signIn.disabled=signUp.disabled=true;
-    try{const input={email:email.value.trim(),password:password.value};if(create)input.options={emailRedirectTo:authRedirectURL()};const result=create?await client.auth.signUp(input):await client.auth.signInWithPassword(input);if(result.error)throw result.error;
-      if(result.data.session)d.close();else err.textContent='Check your email and confirm your account, then return here to sign in.';
-    }catch(e){err.textContent=e.message;}finally{signIn.disabled=signUp.disabled=false;}
+  signedOutViews({d,err,note,actions,heading:d.querySelector('h2')});
+  show();
+}
+/**
+ * Signing in and creating an account want different things and diverge after
+ * submission, so they are separate views rather than one form told apart by
+ * which button was pressed. Each view owns its fields, its validation and its
+ * single primary action, and waiting states use the notice line so that
+ * "confirm your email" never looks like a rejected password.
+ */
+function signedOutViews({d,err,note,actions,heading}){
+  const body=element('div',{class:'auth-body'});
+  // The way across to the other view sits below the message lines, so whatever
+  // the primary action just said stays next to the primary action.
+  const foot=element('div',{class:'auth-foot'});
+  d.insertBefore(body,err);
+  d.insertBefore(foot,actions);
+  const close=actions.firstElementChild;
+  const view=(title,build)=>{heading.textContent=title;err.textContent='';note.textContent='';body.replaceChildren();foot.replaceChildren();actions.replaceChildren(close);build();};
+  const say=(el,text)=>{err.textContent=el===err?text:'';note.textContent=el===note?text:'';};
+  const link=(text,go)=>{const b=element('button',{class:'auth-link',type:'button'},text);b.onclick=go;return b;};
+  const aside=(text,linkText,go)=>{const p=element('p',{class:'auth-aside'},text+' ');p.append(link(linkText,go));foot.append(p);};
+  const authField=(label,attrs,hint)=>{
+    const wrap=element('label',{},label);const input=element('input',attrs);wrap.append(input);body.append(wrap);
+    if(hint)body.append(element('p',{class:'auth-hint'},hint));
+    return input;
+  };
+  const primary=(text,run)=>{const b=element('button',{class:'t-btn t-btn-primary'},text);b.onclick=()=>run(b);actions.append(b);return b;};
+  const submitOn=(input,button)=>{input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();button.click();}};};
+
+  function signIn(prefill=''){
+    view('Sign in',()=>{
+      body.append(element('p',{},'Sign in to bring your tasks together across devices. Guest tasks stay here until you choose to import them.'));
+      const email=authField('Email',{type:'email',autocomplete:'email',required:''});
+      email.value=prefill;
+      const password=authField('Password',{type:'password',autocomplete:'current-password',required:''});
+      const forgot=element('p',{class:'auth-hint'});
+      forgot.append(link('Forgot your password?',async()=>{
+        if(!email.reportValidity())return;
+        try{const result=await client.auth.resetPasswordForEmail(email.value.trim(),{redirectTo:authRedirectURL()});if(result.error)throw result.error;
+          say(note,'If that address has an account, a recovery link is on its way.');
+        }catch{say(err,'A recovery email could not be sent. Wait a moment and try again.');}
+      }));
+      body.append(forgot);
+      const go=primary('Sign in',async button=>{
+        if(!email.reportValidity()||!password.reportValidity())return;
+        button.disabled=true;
+        try{const result=await client.auth.signInWithPassword({email:email.value.trim(),password:password.value});
+          if(result.error)throw result.error;
+          d.close();
+        }catch(e){
+          // An unconfirmed account is a waiting state, not a bad password.
+          if(/not confirmed/i.test(e.message||''))return confirmSent(email.value.trim());
+          say(err,e.message);
+        }finally{button.disabled=false;}
+      });
+      submitOn(password,go);submitOn(email,go);
+      aside('New here?','Create an account',()=>signUp(email.value.trim()));
+    });
   }
-  forgot.onclick=async()=>{if(!email.reportValidity())return;forgot.disabled=true;try{const result=await client.auth.resetPasswordForEmail(email.value.trim(),{redirectTo:authRedirectURL()});if(result.error)throw result.error;err.textContent='If that address has an account, a recovery link is on its way.';}catch{err.textContent='A recovery email could not be sent. Wait a moment and try again.';}finally{forgot.disabled=false;}};
-  signIn.onclick=()=>submit(false);signUp.onclick=()=>submit(true);actions.append(forgot,signUp,signIn);
-  password.onkeydown=e=>{if(e.key==='Enter')submit(false);};show();
+
+  function signUp(prefill=''){
+    view('Create your account',()=>{
+      body.append(element('p',{},'Your tasks sync across every device you sign in on. Guest tasks stay on this device until you choose to import them.'));
+      const email=authField('Email',{type:'email',autocomplete:'email',required:''});
+      email.value=prefill;
+      const password=authField('Password',{type:'password',autocomplete:'new-password',required:''},'At least 8 characters.');
+      const confirmation=authField('Confirm password',{type:'password',autocomplete:'new-password',required:''});
+      const reveal=element('label',{class:'auth-reveal'});
+      const box=element('input',{type:'checkbox'});
+      box.onchange=()=>{for(const input of [password,confirmation])input.type=box.checked?'text':'password';};
+      reveal.append(box,element('span',{},'Show what I type'));
+      body.append(reveal);
+      const go=primary('Create account',async button=>{
+        if(!email.reportValidity())return;
+        const problem=newPasswordError(password.value,confirmation.value);
+        if(problem)return say(err,problem);
+        button.disabled=true;
+        try{const result=await client.auth.signUp({email:email.value.trim(),password:password.value,options:{emailRedirectTo:authRedirectURL()}});
+          if(result.error)throw result.error;
+          if(result.data.session)return d.close();
+          confirmSent(email.value.trim());
+        }catch(e){say(err,e.message);}finally{button.disabled=false;}
+      });
+      submitOn(confirmation,go);
+      aside('Already have an account?','Sign in',()=>signIn(email.value.trim()));
+    });
+  }
+
+  function confirmSent(email){
+    view('Confirm your email',()=>{
+      body.append(element('p',{},'A confirmation link is on its way to '+email+'. Open it, then come back here and sign in.'));
+      body.append(element('p',{class:'auth-hint'},'If an account already exists for this address, the link signs you in to that one instead.'));
+      primary('Resend the link',async button=>{
+        button.disabled=true;
+        try{const result=await client.auth.resend({type:'signup',email,options:{emailRedirectTo:authRedirectURL()}});
+          if(result?.error)throw result.error;
+          say(note,'Sent again. It can take a minute to arrive.');
+        }catch(e){say(err,e.message||'The link could not be sent again. Wait a moment and try again.');}finally{button.disabled=false;}
+      });
+      aside('Already confirmed?','Sign in',()=>signIn(email));
+    });
+  }
+
+  signIn();
 }
 function syncStatus(value){
   if(typeof value==='string')return status(value);
-  const count=value.pending||0;
-  const messages={local:'Saved on this device',syncing:'Saved on this device · syncing…',pending:'Saved on this device · '+count+' changes pending',offline:'Offline · saved on this device',auth:'Saved on this device · sign in to sync',conflict:'Saved on this device · open Account & sync to resolve changes',error:'Saved on this device · sync needs attention',synced:'All changes synced'};
-  status(messages[value.state]||'Saved on this device',value.state==='error'||value.state==='conflict');
+  syncState={state:value.state,pending:value.pending||0};
+  status(syncMessage(syncState.state,syncState.pending),value.state==='error'||value.state==='conflict');
+  renderAccount();
 }
 let accountChange=Promise.resolve();
-function changeAccount(user){accountChange=accountChange.then(async()=>{if(account?.id===user?.id)return;await sync?.stop();sync=null;account=user;await openStore(user?'user:'+user.id:'guest');if(user){sync=createSync({store,client,onStatus:syncStatus});await sync.start();}});return accountChange;}
-async function auth(){if(!SUPABASE_URL||!SUPABASE_PUBLISHABLE_KEY)return;const {createClient}=await import('../vendor/supabase.js');client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});authSubscription=client.auth.onAuthStateChange((event,session)=>{setTimeout(()=>changeAccount(session?.user||null).then(()=>{if(event==='PASSWORD_RECOVERY')passwordRecoveryDialog();}).catch(fail),0);}).data.subscription;const {data,error}=await client.auth.getSession();if(error)throw error;if(data.session)await changeAccount(data.session.user);}
+function changeAccount(user){accountChange=accountChange.then(async()=>{if(account?.id===user?.id)return;await sync?.stop();sync=null;account=user;syncState={state:user?'syncing':'local',pending:0};renderAccount();await openStore(user?'user:'+user.id:'guest');if(user){sync=createSync({store,client,onStatus:syncStatus});await sync.start();}renderAccount();});return accountChange;}
+async function auth(){if(!SUPABASE_URL||!SUPABASE_PUBLISHABLE_KEY)return;const {createClient}=await import('../vendor/supabase.js');client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});renderAccount();authSubscription=client.auth.onAuthStateChange((event,session)=>{setTimeout(()=>changeAccount(session?.user||null).then(()=>{if(event==='PASSWORD_RECOVERY')passwordRecoveryDialog();}).catch(fail),0);}).data.subscription;const {data,error}=await client.auth.getSession();if(error)throw error;if(data.session)await changeAccount(data.session.user);}
 function events(){
   $('task-add-btn').onclick=action(addTask);$('task-input').onkeydown=e=>{if(e.key==='Enter')action(addTask)(e);};
   document.querySelectorAll('[data-list]').forEach(b=>b.onclick=()=>{list=b.dataset.list;render();});

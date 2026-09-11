@@ -15,3 +15,16 @@ dialog{color:#f4f4ef;background:#20281ff5;border:1px solid #ffffff35;border-radi
 .ld-schedule{font-size:12px;margin-bottom:12px}.ld-schedule summary{cursor:pointer;margin-bottom:8px}.ld-schedule__tray{display:flex;gap:5px;overflow:auto;margin:8px 0}.ld-schedule__tray button{white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;cursor:grab!important}.ld-schedule__grid{display:flex;gap:7px;max-height:280px;overflow:auto;border:1px solid #ffffff20;border-radius:9px}.ld-schedule__day{flex:1;min-width:110px}.ld-schedule__day strong{display:block;padding:8px;font-size:11px;position:sticky;top:0;background:#374333;z-index:1}.ld-schedule__slot{display:block;width:100%;height:36px;text-align:left;border-radius:0!important;border:0!important;border-bottom:1px solid #ffffff15!important;font-size:10px!important;color:#ccd2c8!important}.ld-schedule__slot.is-over{background:#c8906055!important}
 .history-list{max-height:50vh;overflow:auto}.history-list small{font-size:11px;line-height:1.5;color:#d4dace}
 .sync-conflict-reason{font-size:12px;color:#e8c7ad!important}.sync-conflict button{margin-right:8px;margin-top:4px}
+.account-btn{position:relative;overflow:visible;font-size:13px;font-weight:600}
+.account-btn .account-glyph{display:flex;align-items:center;justify-content:center;line-height:1}
+.account-dot{position:absolute;right:-2px;bottom:-2px;min-width:12px;height:12px;padding:0 2px;border-radius:7px;border:2px solid #222a1e;background:#b9c2b1;color:#1b2318;font-size:8px;font-weight:700;line-height:1;display:flex;align-items:center;justify-content:center}
+.account-btn[data-tone=ok] .account-dot{background:#8fc98a}
+.account-btn[data-tone=work] .account-dot{background:#e9cf8a}
+.account-btn[data-tone=warn] .account-dot{background:#e0ab6e}
+.account-btn[data-tone=alert] .account-dot{background:#e98a76}
+.dialog-notice{color:#c6dfbd!important}.dialog-notice:empty{display:none}.dialog-error:empty{min-height:0}
+.auth-hint{font-size:11px!important;color:#c1cab8!important;margin:6px 0 0!important}
+.auth-link{background:none;border:0;padding:0;font-size:inherit;color:#dbe8d2;text-decoration:underline;cursor:pointer}
+.auth-foot{margin-top:16px}.auth-foot .auth-aside{margin:0!important;padding-top:14px;border-top:1px solid #ffffff1f;font-size:12px!important}
+.auth-reveal{display:flex!important;align-items:center;gap:8px;font-size:12px;margin-top:12px!important}
+.auth-reveal input{margin:0!important}
