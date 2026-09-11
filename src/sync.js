@@ -629,10 +629,93 @@ export function createSync({
     publish('local', { error: null });
   }
 
+  // A conflicted command carries the server's account of the clash in
+  // serverReceipt. private.save_conflict nests that account under `conflict`
+  // and puts the entity and the revision that beat us at the top level, so
+  // read both places. Resolution is purely local: the server has already
+  // refused the command and recorded it, so there is nothing to withdraw.
+  function describeConflict(command) {
+    const receipt = command.serverReceipt || {};
+    const detail = receipt.conflict || {};
+    return {
+      opId: command.opId,
+      kind: command.kind,
+      entityType: receipt.entityType || receipt.entity_type || command.kind?.split('.')[0] || null,
+      entityId: command.entityId ?? receipt.entityId ?? receipt.entity_id ?? null,
+      reason: detail.reason || receipt.reason || command.lastError || 'Conflict requires resolution',
+      proposed: detail.proposed ?? receipt.proposed ?? command.payload ?? null,
+      current: detail.current ?? receipt.current ?? null,
+      baseRevision: command.baseRevision ?? null,
+      currentRevision: currentRevisionOf(receipt),
+      blockedBy: command.afterOpId || command.predecessorOpId || null,
+    };
+  }
+
+  function currentRevisionOf(receipt) {
+    return receipt.revision ?? receipt.currentRevision ?? receipt.current_revision ?? null;
+  }
+
+  async function listConflicts() {
+    const outbox = (await store.listOutbox()).filter(isWireCommand);
+    return outbox.filter((command) => command.status === 'conflict').map(describeConflict);
+  }
+
+  /**
+   * Keeping the local change means replaying it against what the server holds
+   * now. The protocol forbids editing and resending an operation the server has
+   * already ruled on, so this is a fresh command: storage mints the new opId.
+   */
+  function rebasedCommand(command) {
+    const receipt = command.serverReceipt || {};
+    return {
+      kind: command.kind,
+      entityId: command.entityId,
+      payload: clone(command.payload),
+      baseRevision: currentRevisionOf(receipt) ?? command.baseRevision,
+      protocol: command.protocol ?? 1,
+    };
+  }
+
+  async function resolveConflict(opId, { strategy = 'server' } = {}) {
+    if (strategy !== 'server' && strategy !== 'local') {
+      throw new TypeError(`Unknown conflict strategy: ${strategy}`);
+    }
+    const outbox = (await store.listOutbox()).filter(isWireCommand);
+    const command = outbox.find((entry) => entry.opId === opId);
+    if (!command) throw new Error(`No queued command ${opId}`);
+    if (command.status !== 'conflict') throw new Error(`Command ${opId} is not in conflict`);
+
+    // push() parks the queue behind a conflict as 'conflict' too, though those
+    // commands were never sent. replaceOutboxConflict refuses to relink a
+    // dependent that is not pending, so put them back in the state they were
+    // really in before handing over.
+    for (const dependent of outbox) {
+      if ((dependent.predecessorOpId || dependent.afterOpId) !== opId) continue;
+      if (dependent.status === 'pending') continue;
+      await store.updateOutbox(dependent.opId, {
+        status: 'pending', lastError: null, nextAttemptAt: null,
+      });
+    }
+
+    // One transaction drops the refused command, adds any replacement, and
+    // rebases the dependents onto the revision the server reported. Taking the
+    // server's version keeps those dependents rather than discarding a later
+    // edit the server never objected to. Local state is left alone: with the
+    // command gone the entity is no longer shielded, so the next pull restores
+    // the server's value.
+    await store.replaceOutboxConflict(opId, {
+      command: strategy === 'local' ? rebasedCommand(command) : null,
+    });
+    await refreshStatus();
+    schedule(0);
+  }
+
   return {
     start,
     stop,
     flush,
+    listConflicts,
+    resolveConflict,
     getStatus: () => clone(status),
   };
 }
