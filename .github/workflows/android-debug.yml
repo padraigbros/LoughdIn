@@ -6,6 +6,7 @@ on:
       - 'android/**'
       - 'capacitor.config.json'
       - 'icons/**'
+      - 'assets/**'
       - 'scripts/**'
       - 'src/**'
       - 'styles/**'

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <title>Lough'd In — Lough Guitane through a keyhole</title>
+  <defs>
+    <!-- Small left summit, low saddle, long ridge and rounded right summit:
+         simplified from the owner's corrected LG.png, without an invented sun. -->
+    <path id="ridge" d="M132 219 146 221 157 226 165 233 173 229 182 219 192 212 201 216 214 228 227 238 235 241 248 231 261 218 274 208 285 211 302 210 319 208 333 204 343 199 353 200 366 205 380 208 380 261 132 261Z"/>
+    <clipPath id="keyhole"><path d="M203 293A116 116 0 1 1 309 293L340 400Q343 414 327 414H185Q169 414 172 400Z"/></clipPath>
+  </defs>
+  <rect width="512" height="512" fill="#102f2d"/>
+  <g clip-path="url(#keyhole)">
+    <path fill="#dce7e9" d="M132 72H380V414H132Z"/>
+    <path fill="#f1ede2" d="M132 180 220 175 270 180 380 168V261H132Z"/>
+    <use href="#ridge" fill="#526975"/>
+    <path fill="#294a4d" d="M132 250 170 251 210 253 254 255 300 253 350 252 380 253V262H132Z"/>
+    <path fill="#a3bdb0" d="M132 262H380V414H132Z"/>
+    <use href="#ridge" transform="translate(0 523) scale(1 -1)" fill="#658584"/>
+    <path d="M158 267H356M191 313H246M257 328H310M210 348H280" fill="none" stroke="#e4eae0" stroke-width="3" stroke-linecap="round"/>
+  </g>
+</svg>

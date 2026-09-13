@@ -4,6 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "icons": "node scripts/icons.mjs",
+    "test:browser": "npm run build && node tests/browser-smoke.mjs",
     "dev": "node scripts/vendor.mjs && node scripts/serve.mjs",
     "build": "node scripts/vendor.mjs && node scripts/build.mjs",
     "check": "node --check src/app.js && node --check src/timer.js && node --check src/storage.js && node --check src/sync.js && node --check src/planner.js && node --check src/scenes.js && node --check src/native.js && node --check src/config.js",
@@ -17,6 +19,8 @@
     "esbuild": "0.28.2",
     "fake-indexeddb": "6.2.5",
     "jsdom": "29.1.1",
+    "playwright": "1.62.1",
+    "sharp": "0.35.4",
     "supabase": "2.117.0"
   },
   "dependencies": {

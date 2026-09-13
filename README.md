@@ -1,6 +1,6 @@
 # Lough'd In
 
-A personal focus tool with the original Kerry landscape and glass-panel interface. Work and personal tasks, Pomodoro and Flow sessions, an Eisenhower matrix, and day/week scheduling share durable local state.
+A personal focus tool set against your photograph of Lough Guitane. Work and personal tasks, Pomodoro and Flow sessions, an Eisenhower matrix, and day/week scheduling share durable local state.
 
 ## Run locally
 
@@ -35,6 +35,6 @@ See [the production Auth and SMTP runbook](docs/AUTH-SMTP-RUNBOOK.md) for exact 
 
 ## Development scope
 
-The existing HTML/CSS layout and bundled scenery are intentionally retained. Application logic now lives in tested modules rather than the original inline script. The Android shell uses the same interface. A countdown redraw never writes to the network; session transitions persist, while completed focus records feed statistics.
+The responsive workspace uses a continuous lake background, sky-positioned quotes and a matching keyhole identity. Focus, Plan and Progress navigation shares the same interface on web and Android. See [the visual design notes](docs/IMMERSIVE-DESIGN.md). Application logic lives in tested modules. A countdown redraw never writes to the network; session transitions persist, while completed focus records feed statistics.
 
 A running timer is currently local to its device. Tasks, time blocks and recorded focus sessions are the sync scope; live timer takeover remains an explicit blueprint item.
