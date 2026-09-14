@@ -10,8 +10,11 @@ for (const size of [192, 512]) {
   await copyFile(new URL(`icons/icon-${size}.png`, root), new URL(`icon-${size}.png`, root));
 }
 // The master keeps the entire keyhole inside the maskable central safe circle.
-// Android foreground uses the identical coordinate system over a solid field.
-const foreground = master.replace('<rect width="512" height="512" fill="#102f2d"/>', '');
+// Android launchers only guarantee the central 66dp of the 108dp foreground, so
+// the keyhole is shrunk about its best-fit centre (y 252) to a ~31.5dp radius.
+const foreground = master
+  .replace('<rect width="512" height="512" fill="#102f2d"/>', '')
+  .replace(/^(<svg[^>]*>)([\s\S]*)(<\/svg>\s*)$/, '$1<g transform="translate(256 256) scale(.84) translate(-256 -252)">$2</g>$3');
 for (const [density, legacy, adaptive] of [['mdpi',48,108],['hdpi',72,162],['xhdpi',96,216],['xxhdpi',144,324],['xxxhdpi',192,432]]) {
   const dir = new URL(`android/app/src/main/res/mipmap-${density}/`, root);
   await mkdir(dir, {recursive: true});
