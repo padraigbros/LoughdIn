@@ -4,12 +4,14 @@
 <meta charset="UTF-8">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self' https://kknbyhlwmuzttyxyuffe.supabase.co wss://kknbyhlwmuzttyxyuffe.supabase.co; media-src https:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#2a3325">
+<meta name="theme-color" content="#102f2d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Lough'd In">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="icon" type="image/svg+xml" href="icons/keyhole.svg">
+<link rel="preload" as="image" href="assets/lough-guitane.png" fetchpriority="high">
 <title>Lough'd In</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
@@ -153,7 +155,7 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
 .set-check input{accent-color:var(--warm);width:15px;height:15px}
 
 /* Zen */
-#app.zen #content>*:not(.timer-block):not(.hero-foot){display:none}
+#app.zen #content>*:not(.timer-block):not(.hero-foot):not(.quote-carousel){display:none}
 #app.zen #timer-display{font-size:clamp(88px,26vw,150px)}
 #zen-quote{position:fixed;bottom:clamp(6rem,15vh,10rem);left:50%;transform:translateX(-50%);text-align:center;width:90%;max-width:480px;opacity:0;pointer-events:none;z-index:3;display:none;transition:opacity .8s}
 #app.zen #zen-quote{opacity:1;display:block}
@@ -168,22 +170,30 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
 @media(max-width:480px){.stat-grid{gap:10px}.panel{padding:1rem}}
 @media(max-width:360px){.task-add{flex-wrap:wrap}.task-add input{min-width:100%;order:1}.task-add select{order:2}.task-add button{order:3}}
 </style>
+<link rel="stylesheet" href="styles/enhancements.css">
+<link rel="stylesheet" href="styles/immersive.css">
 </head>
 <body>
-<h2 class="sr-only">Lough'd In — focus timer with Kerry scenery, persistent tasks, ambient music</h2>
+<a class="skip-link" href="#focus-workspace">Skip to focus timer</a>
+<h1 class="sr-only">Lough'd In — focus by Lough Guitane</h1>
 <div id="app">
-  <div id="scene-stack"></div>
-  <div id="hero-veil"></div>
+  <div id="scene-stack" aria-hidden="true"><img id="lake-background" src="assets/lough-guitane.png" alt="" width="1393" height="1005" fetchpriority="high"></div>
+  <div id="hero-veil" aria-hidden="true"></div>
   <div id="content">
     <div class="brand-row">
-      <div class="brand"><span class="brand-mark">Lough'd In</span><span class="brand-sub">· Kerry</span></div>
+      <div class="brand"><img class="brand-icon" src="icons/keyhole.svg" alt="" width="44" height="44"><span class="brand-mark">Lough'd In</span></div>
+      <nav class="workspace-nav" aria-label="Workspace">
+        <button type="button" data-section="focus" aria-current="page">Focus</button>
+        <button type="button" data-section="plan">Plan</button>
+        <button type="button" data-section="progress">Progress</button>
+      </nav>
       <div class="brand-actions">
         <button class="brand-btn" id="btn-zen" title="Zen mode">&#x2922;</button>
         <button class="brand-btn" id="btn-settings" title="Settings">&#x2699;</button>
       </div>
     </div>
-    <div class="quote-carousel"><div id="main-quote"></div><div id="main-quote-attr"></div></div>
-    <div class="timer-block">
+    <div class="quote-carousel" aria-label="Motivational quote"><div id="main-quote"></div><div id="main-quote-attr"></div></div>
+    <section class="timer-block" id="focus-workspace" aria-label="Focus timer" tabindex="-1">
       <div class="mode-tags">
         <button class="mode-tag active" data-mode="work">Focus</button>
         <button class="mode-tag" data-mode="short">Short break</button>
@@ -193,6 +203,9 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
       <div class="active-strip">
         <span class="active-cap">now focusing on</span>
         <span id="active-task-text">pick a task below to lock it in</span>
+        <span id="active-task-next"></span>
+        <button type="button" id="btn-choose-task" class="subtle-btn">Choose a task</button>
+        <span id="queued-task" role="status" hidden></span>
         <div id="active-dots"></div>
       </div>
       <div class="timer-actions">
@@ -203,8 +216,9 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
         <span id="session-text">Session 1 of 4</span>
         <div class="session-dots" id="session-dots"><div class="dot"></div><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
       </div>
-    </div>
-    <div class="panel">
+    </section>
+    <section class="panel task-panel" id="tasks-panel" aria-labelledby="tasks-heading" tabindex="-1">
+      <div class="panel-head"><h2 id="tasks-heading">Your tasks</h2></div>
       <div class="task-tabs">
         <button class="task-tab active" data-list="work">Work <span class="task-tab-count" id="count-work">0</span></button>
         <button class="task-tab" data-list="personal">Personal <span class="task-tab-count" id="count-personal">0</span></button>
@@ -215,8 +229,8 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
         <button id="task-add-btn">+ Add</button>
       </div>
       <ul class="task-list" id="task-list"></ul>
-    </div>
-    <div class="panel">
+    </section>
+    <section class="panel stats-panel" id="progress-panel" aria-label="Your progress" tabindex="-1">
       <div class="panel-head"><div class="panel-title">Today &amp; this week</div></div>
       <div class="stat-grid">
         <div class="goal-ring">
@@ -229,8 +243,8 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
       </div>
       <div class="heat-row" id="heat-row"></div>
       <div class="heat-days"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
-    </div>
-    <div class="panel" style="padding:clamp(.85rem,3vw,1.1rem)">
+    </section>
+    <div class="panel music-panel">
       <div class="music-row" id="music-dock">
         <button class="music-btn" data-src="https://streams.ilovemusic.de/iloveradio17.mp3" data-label="Lo-fi">Lo-fi</button>
         <button class="music-btn" data-src="https://streams.ilovemusic.de/iloveradio2.mp3" data-label="Chillout">Chill</button>
@@ -241,10 +255,7 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
       </div>
     </div>
     <div class="hero-foot">
-      <span id="scene-label">Lough Guitane · soft afternoon</span>
-      <button class="scene-btn" id="scene-prev">&#x2039;</button>
-      <button class="scene-btn" id="scene-next">&#x203A;</button>
-      <button class="scene-btn" id="scene-new">&#x2736;</button>
+      <span id="scene-label">Lough Guitane</span>
     </div>
   </div>
   <div id="zen-quote"><div id="zen-quote-text"></div><div id="zen-quote-attr"></div></div>

@@ -30,6 +30,9 @@ test('service worker precaches the complete app shell and owns only its scope ca
     './manifest.json',
     './icons/icon-192.png',
     './icons/icon-512.png',
+    './icons/keyhole.svg',
+    './assets/lough-guitane.png',
+    './styles/immersive.css',
     './src/app.js',
     './src/timer.js',
     './src/storage.js',
@@ -74,6 +77,9 @@ test('build emits only the explicitly publishable app tree', () => {
     'sw.js',
     'icons/icon-192.png',
     'icons/icon-512.png',
+    'icons/keyhole.svg',
+    'assets/lough-guitane.png',
+    'styles/immersive.css',
     'src/app.js',
     'src/timer.js',
     'src/storage.js',
@@ -92,7 +98,7 @@ test('build emits only the explicitly publishable app tree', () => {
   for (const file of published) {
     assert.doesNotMatch(file, /(?:^|[./_-])(?:\.env|secret|credential|token|snapshot)(?:[./_-]|$)/i);
     assert.doesNotMatch(file, /\.(?:md|markdown|map)$/i);
-    assert.ok(/^(?:index\.html|manifest\.json|sw\.js|(?:icons|src|styles|vendor)\/)/.test(file), file);
+    assert.ok(/^(?:index\.html|manifest\.json|sw\.js|(?:assets|icons|src|styles|vendor)\/)/.test(file), file);
   }
 });
 

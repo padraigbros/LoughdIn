@@ -24,7 +24,8 @@ test('existing screen persists capture, focus transitions, matrix edits and cale
     assert.equal(app.newPasswordError('long-enough','different'),'Passwords do not match.');
     assert.equal(app.newPasswordError('long-enough','long-enough'),'');
     observer=createStore({namespace:'guest'});await observer.open();const $=id=>document.getElementById(id);
-    assert.equal(document.querySelectorAll('#scene-stack svg').length,3);
+    assert.equal($('lake-background').getAttribute('src'),'assets/lough-guitane.png');
+    assert.equal($('main-quote').textContent,"Do what you can't.");
     $('task-input').value='Ship a small, useful improvement';await $('task-add-btn').onclick();
     let data=await observer.readState();assert.equal(data.tasks.work.length,1);const task=data.tasks.work[0];
     await document.querySelector('.task-text').onclick();await $('btn-start').onclick();
@@ -44,5 +45,13 @@ test('existing screen persists capture, focus transitions, matrix edits and cale
     $('btn-zen').onclick();assert.equal($('app').classList.contains('zen'),true);$('zen-exit-btn').onclick();assert.equal($('app').classList.contains('zen'),false);
     document.querySelector('[data-view=list]').onclick();await document.querySelector('.task-del').onclick();data=await observer.readState();assert.ok(data.tasks.work[0].deletedAt);assert.ok(data.blocks[0].deletedAt);
     assert.equal(document.querySelectorAll('.task').length,0);
+    document.querySelector('button[data-section=plan]').onclick();
+    assert.equal($('content').dataset.section,'plan');
+    assert.equal(document.querySelectorAll('.ld-planner__form').length,1);
+    document.querySelector('button[data-section=progress]').onclick();
+    assert.equal($('content').dataset.section,'progress');
+    document.querySelector('button[data-section=focus]').onclick();
+    assert.equal($('content').dataset.section,'focus');
+    assert.equal($('task-list').hidden,false);
   }finally{await app?.disposeApp();observer?.close();dom.window.close();for(const [key,value] of originals){if(value)Object.defineProperty(globalThis,key,value);else delete globalThis[key];}}
 });

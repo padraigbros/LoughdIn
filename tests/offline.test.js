@@ -12,6 +12,11 @@ test('offline worker serves its complete scoped shell without touching API reque
   const w=await worker();await w.run('install');assert.equal(w.skips(),0);
   const nav=await w.run('fetch',{request:{method:'GET',mode:'navigate',url:'https://example.test/LoughdIn/'}});assert.match(await nav.text(),/LoughdIn\/index.html/);assert.equal(w.network(),0);
   const module=await w.run('fetch',{request:{method:'GET',url:'https://example.test/LoughdIn/src/config.js'}});assert.match(await module.text(),/config.js/);
+  for(const asset of ['assets/lough-guitane.png','icons/keyhole.svg','styles/immersive.css']){
+    const response=await w.run('fetch',{request:{method:'GET',url:'https://example.test/LoughdIn/'+asset}});
+    assert.ok(response.ok);assert.ok((await response.text()).endsWith(asset));
+  }
+  assert.equal(w.network(),0);
   assert.equal(await w.run('fetch',{request:{method:'POST',url:'https://example.test/LoughdIn/api'}}),undefined);
   assert.equal(await w.run('fetch',{request:{method:'GET',url:'https://project.supabase.co/rest/v1/tasks'}}),undefined);
 });

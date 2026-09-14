@@ -1,4 +1,4 @@
-import {SCENES,QUOTES} from './scenes.js';
+import {QUOTES} from './scenes.js';
 import {createStore} from './storage.js';
 import {createTimer,transition,timerDisplay,remainingMs,sessionFromTimer,nextAutomaticPhase,dailyStats,weekStats,localDateKey,createClock} from './timer.js';
 import {mountPlanner,renderPlanner,validateBlock} from './planner.js';
@@ -51,9 +51,8 @@ async function save(mutator,makeCommand){
 }
 function action(fn){return async event=>{try{await fn(event);}catch(error){fail(error);}};}
 function setupShell(){
-  const css=element('link',{rel:'stylesheet',href:'styles/enhancements.css'});document.head.append(css);
   $('task-input').setAttribute('aria-label','New task');$('task-input').maxLength=500;$('task-prio').setAttribute('aria-label','Task priority');$('music-vol').setAttribute('aria-label','Music volume');
-  $('scene-prev').setAttribute('aria-label','Previous scene');$('scene-next').setAttribute('aria-label','Next scene');$('scene-new').setAttribute('aria-label','Shuffle scenery');$('zen-exit-btn').setAttribute('aria-label','Exit Zen mode');
+  $('zen-exit-btn').setAttribute('aria-label','Exit Zen mode');
   document.querySelector('.mode-tags').append(element('button',{class:'mode-tag','data-mode':'flow'},'Flow'));
   const finish=element('button',{class:'t-btn',id:'btn-finish'},'Finish');document.querySelector('.timer-actions').append(finish);
   const interrupt=element('button',{class:'t-btn t-btn-icon',id:'btn-interrupt',title:'Log an interruption','aria-label':'Log an interruption'},'↗');document.querySelector('.timer-actions').append(interrupt);
@@ -70,7 +69,9 @@ function setupShell(){
   footer.append(element('button',{class:'subtle-btn',id:'btn-backup'},'Backup'));
   const history=element('button',{class:'subtle-btn',id:'btn-history'},'Session history');footer.append(history);
   const message=element('div',{id:'save-status',class:'save-status',role:'status','aria-live':'polite'},'Opening your tasks…');
-  document.querySelector('.hero-foot').before(footer,message);
+  document.querySelector('.hero-foot').before(footer);
+  document.querySelector('.brand-row').append(message);
+  $('content').dataset.section='focus';
   for(const mode of ['work','short','long','goal'])$('dur-'+mode).previousElementSibling.htmlFor='dur-'+mode;
   $('settings-pop').setAttribute('aria-label','Timer settings');
   mountPlanner($('planning-view'),{onViewChange:next=>{view=next;render();},onTaskUpdate:(id,patch)=>updateTask(id,patch).catch(fail),onBlockSave:saveBlock,onBlockDelete:id=>deleteBlock(id).catch(fail),onFocusTask:id=>focusTask(id).catch(fail)});
@@ -104,10 +105,17 @@ function render(){
 function renderTimer(){
   const t=state.timer;if(!t)return;const display=timerDisplay(t,clock.now());$('timer-display').textContent=display;
   document.title=t.status==='running'?display+" · Lough'd In":"Lough'd In";
-  $('btn-start').textContent=t.status==='running'?'Ⅱ Pause':t.status==='complete'?'▶ New session':t.status==='paused'?'▶ Resume':'▶ Start';
+  $('btn-start').textContent=t.status==='running'?'Ⅱ Pause':t.status==='complete'?'▶ New session':t.status==='paused'?'▶ Resume':t.phase==='short'||t.phase==='long'?'▶ Start break':'▶ Start focus';
   $('btn-interrupt').hidden=t.status!=='running';$('btn-finish').hidden=!['running','paused'].includes(t.status);$('btn-start').disabled=busy;
   document.querySelectorAll('[data-mode]').forEach(b=>{b.classList.toggle('active',b.dataset.mode===t.phase);b.setAttribute('aria-pressed',String(b.dataset.mode===t.phase));});
-  const task=t.status==='idle'?selected(state):t.task;$('active-task-text').textContent=task?.text||'pick a task below to lock it in';
+  const task=t.status==='idle'?selected(state):t.task;
+  $('active-task-text').textContent=task?.text||'A little time for what matters';
+  $('active-task-next').textContent=task?.nextAction||(!task?'Choose a task, or start an open focus session.':'');
+  $('btn-choose-task').textContent=task?'Change task →':'Choose a task →';
+  const queued=selected(state);
+  const hasQueued=t.status!=='idle'&&queued&&queued.id!==task?.id;
+  $('queued-task').hidden=!hasQueued;
+  $('queued-task').textContent=hasQueued?'Next session: '+queued.text:'';
   $('active-dots').replaceChildren(...Array.from({length:Math.min(findTask(state,task?.id)?.poms||0,24)},()=>element('span',{class:'adot filled'})));
   $('session-text').textContent=t.phase==='flow'?'Flow · finish when you’re ready':`Session ${Math.min(t.cycles+1,4)} of 4`;
   [...$('session-dots').children].forEach((el,i)=>el.classList.toggle('done',i<t.cycles));
@@ -122,9 +130,13 @@ function renderTasks(){
     const text=element('button',{class:'task-text','aria-label':`Focus on ${t.text}`},t.text);text.onclick=action(()=>focusTask(t.id));
     if(t.nextAction)text.append(element('span',{class:'task-detail'},t.nextAction));
     const priority=element('span',{class:`prio-dot ${t.priority}`,title:`${t.priority} priority`});
+    const focus=element('button',{class:'task-focus-btn','aria-label':`Select ${t.text} for focus`},'Focus');focus.onclick=action(()=>focusTask(t.id));focus.hidden=t.done;
     const edit=element('button',{class:'task-edit-btn','aria-label':`Edit ${t.text}`},'✎');edit.onclick=()=>editTask(t);
     const del=element('button',{class:'task-del','aria-label':`Delete ${t.text}`},'×');del.onclick=action(()=>deleteTask(t.id));
-    row.append(check,priority,text,element('span',{class:'task-poms'},t.poms?String(t.poms):''),edit,del);return row;
+    const more=element('details',{class:'task-more'});
+    const summary=element('summary',{'aria-label':`More actions for ${t.text}`},'⋯');
+    const menu=element('div',{class:'task-menu'});edit.textContent='Edit';del.textContent='Delete';menu.append(edit,del);more.append(summary,menu);
+    row.append(check,priority,text,element('span',{class:'task-poms'},t.poms?String(t.poms):''),focus,more);return row;
   });$('task-list').replaceChildren(...(rows.length?rows:[element('li',{class:'empty-tasks'},'A little space for what matters. Add your first task.')]));
 }
 async function addTask(){
@@ -208,7 +220,7 @@ function backups(){const {d,err,actions,show}=dialog('Your data, kept with you')
   const exp=element('button',{class:'subtle-btn'},'Export backup');exp.onclick=async()=>{try{download('loughdin-backup-'+localDateKey()+'.json',await store.exportJSON());}catch(e){err.textContent=e.message;}};actions.append(exp);
   const file=field(d,'Import backup','input',{type:'file',accept:'.json,application/json'});file.disabled=!!account;file.onchange=async()=>{try{const f=file.files[0];if(!f)return;if(f.size>10*1024*1024)throw Error('Backup must be smaller than 10 MB.');await store.importJSON(await f.text());state=await store.readState();render();err.textContent='Backup imported on this device.';}catch(e){err.textContent=e.message;}};
   if(account)d.insertBefore(element('p',{},'Sign out before importing into guest data.'),err);show();}
-function scenery(){let index=0;const sceneEls=SCENES.map((s,i)=>{const el=element('div',{class:'scene'+(i===0?' on':'')});el.innerHTML=s.s;$('scene-stack').append(el);return el;});const set=i=>{index=(i+SCENES.length)%SCENES.length;sceneEls.forEach((el,j)=>el.classList.toggle('on',j===index));$('scene-label').textContent='Lough Guitane · '+SCENES[index].l;};$('scene-prev').onclick=()=>set(index-1);$('scene-next').onclick=()=>set(index+1);$('scene-new').onclick=()=>set(index+1+Math.floor(Math.random()*(SCENES.length-1)));set(0);
+function scenery(){
   let quote=0;const show=()=>{const q=QUOTES[quote++%QUOTES.length];for(const id of ['main-quote','zen-quote-text'])$(id).textContent=q.q;for(const id of ['main-quote-attr','zen-quote-attr'])$(id).textContent=q.a;};show();quoteInterval=setInterval(show,45000);
 }
 function music(){const audio=$('audio');audio.volume=.4;let current=null;document.querySelectorAll('.music-btn').forEach(b=>b.onclick=async()=>{try{if(current===b.dataset.src){audio.pause();current=null;}else{audio.src=b.dataset.src;await audio.play();current=b.dataset.src;}document.querySelectorAll('.music-btn').forEach(x=>x.classList.toggle('on',x.dataset.src===current));}catch{status('This station is unavailable. Try another station.',true);}});$('music-vol').oninput=e=>{audio.volume=Number(e.target.value)/100;};audio.addEventListener('error',()=>status('Music stream unavailable. Your timer keeps running.',true));}
@@ -216,6 +228,19 @@ function zen(on){$('app').classList.toggle('zen',on);const dock=$('music-dock');
 }
 const musicHome=$('music-dock').parentElement;
 function toggleZen(on){zen(on);if(!on)musicHome.append($('music-dock'));$(on?'zen-exit-btn':'btn-zen').focus();}
+function showSection(section){
+  $('content').dataset.section=section;
+  document.querySelectorAll('[data-section]').forEach(button=>{
+    if(button.tagName!=='BUTTON')return;
+    if(button.dataset.section===section)button.setAttribute('aria-current','page');else button.removeAttribute('aria-current');
+  });
+  if(section==='focus')view='list';
+  if(section==='plan')view='plan';
+  render();
+  const target=$(section==='plan'?'tasks-panel':section==='progress'?'progress-panel':'focus-workspace');
+  target.focus({preventScroll:true});
+  target.scrollIntoView?.({block:'nearest',behavior:'instant'});
+}
 /**
  * The one route from trying the app to keeping what you made, so it says what
  * it is about to do before doing it: the first press reads the guest namespace
@@ -400,6 +425,14 @@ let accountChange=Promise.resolve();
 function changeAccount(user){accountChange=accountChange.then(async()=>{if(account?.id===user?.id)return;await sync?.stop();sync=null;account=user;syncState={state:user?'syncing':'local',pending:0};renderAccount();await openStore(user?'user:'+user.id:'guest');if(user){sync=createSync({store,client,onStatus:syncStatus});await sync.start();}renderAccount();});return accountChange;}
 async function auth(){if(!SUPABASE_URL||!SUPABASE_PUBLISHABLE_KEY)return;const {createClient}=await import('../vendor/supabase.js');client=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,{auth:{flowType:'pkce',persistSession:true,autoRefreshToken:true,detectSessionInUrl:true}});renderAccount();authSubscription=client.auth.onAuthStateChange((event,session)=>{setTimeout(()=>changeAccount(session?.user||null).then(()=>{if(event==='PASSWORD_RECOVERY')passwordRecoveryDialog();}).catch(fail),0);}).data.subscription;const {data,error}=await client.auth.getSession();if(error)throw error;if(data.session)await changeAccount(data.session.user);}
 function events(){
+  document.querySelectorAll('button[data-section]').forEach(button=>button.onclick=()=>showSection(button.dataset.section));
+  $('btn-choose-task').onclick=()=>{
+    if($('app').classList.contains('zen'))toggleZen(false);
+    showSection('focus');
+    const target=document.querySelector('#task-list .task-text')||$('task-input');
+    target.focus();
+    target.scrollIntoView?.({block:'center',behavior:'instant'});
+  };
   $('task-add-btn').onclick=action(addTask);$('task-input').onkeydown=e=>{if(e.key==='Enter')action(addTask)(e);};
   document.querySelectorAll('[data-list]').forEach(b=>b.onclick=()=>{list=b.dataset.list;render();});
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=action(()=>timerAction('mode',b.dataset.mode)));

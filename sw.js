@@ -12,6 +12,8 @@ const SHELL_PATHS = [
   './manifest.json',
   './icons/icon-192.png',
   './icons/icon-512.png',
+  './icons/keyhole.svg',
+  './assets/lough-guitane.png',
   './src/app.js',
   './src/timer.js',
   './src/storage.js',
@@ -22,7 +24,8 @@ const SHELL_PATHS = [
   './src/native.js',
   './vendor/supabase.js',
   './vendor/native.js',
-  './styles/enhancements.css'
+  './styles/enhancements.css',
+  './styles/immersive.css'
 ];
 const SHELL_URLS = SHELL_PATHS.map(path => new URL(path, REGISTRATION_SCOPE).href);
 const SHELL_URL_SET = new Set(SHELL_URLS);
