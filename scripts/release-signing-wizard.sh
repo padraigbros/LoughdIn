@@ -189,6 +189,9 @@ finish() {
 # pipes, and never written to disk or shell history. Nothing goes to .env.
 
 TOTAL_STAGES=6
+# The password and backup prompts loop until answered, so refuse to start
+# without a terminal to answer them.
+[[ -t 0 ]] || { warn "Run this in an interactive terminal: bash scripts/release-signing-wizard.sh"; exit 1; }
 REPO="padraigbros/LoughdIn"
 KEY_ALIAS="loughdin"
 KEY_DIR="${LOUGHDIN_KEY_DIR:-$HOME/.loughdin-release}"
