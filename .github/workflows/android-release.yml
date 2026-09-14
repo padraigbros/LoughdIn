@@ -1,0 +1,110 @@
+name: Android release
+
+# Push a tag matching package.json (e.g. v0.4.0) to build, verify and publish a
+# signed APK and AAB. Run manually to produce the same artifacts without a
+# GitHub Release. Signing secrets are described in
+# docs/ANDROID-RELEASE-AND-SMOKE-TEST.md.
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-release
+  cancel-in-progress: false
+
+jobs:
+  signed-release:
+    runs-on: ubuntu-latest
+    env:
+      LOUGHDIN_KEYSTORE_BASE64: ${{ secrets.LOUGHDIN_KEYSTORE_BASE64 }}
+      LOUGHDIN_KEYSTORE_PASSWORD: ${{ secrets.LOUGHDIN_KEYSTORE_PASSWORD }}
+      LOUGHDIN_KEY_ALIAS: ${{ secrets.LOUGHDIN_KEY_ALIAS }}
+      LOUGHDIN_KEY_PASSWORD: ${{ secrets.LOUGHDIN_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Setup Node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Setup Java
+        uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Check version tag and signing secrets
+        run: |
+          set -euo pipefail
+          version=$(node -p "require('./package.json').version")
+          echo "APP_VERSION=$version" >> "$GITHUB_ENV"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version. Bump package.json first."
+            exit 1
+          fi
+          missing=0
+          for name in LOUGHDIN_KEYSTORE_BASE64 LOUGHDIN_KEYSTORE_PASSWORD LOUGHDIN_KEY_ALIAS LOUGHDIN_KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::Repository secret $name is not set."; missing=1; fi
+          done
+          exit $missing
+      - name: Install dependencies
+        run: npm ci
+      - name: Check and test
+        run: |
+          npm run check
+          npm test
+      - name: Build and sync Android shell
+        run: npm run android:sync
+      - name: Build signed APK and AAB
+        working-directory: android
+        run: |
+          set -euo pipefail
+          export LOUGHDIN_KEYSTORE_FILE="$RUNNER_TEMP/loughdin-release.jks"
+          printf '%s' "$LOUGHDIN_KEYSTORE_BASE64" | base64 -d > "$LOUGHDIN_KEYSTORE_FILE"
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleRelease bundleRelease
+      - name: Verify signature, version and public-only configuration
+        run: |
+          set -euo pipefail
+          tools=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          test -f "$apk" || { echo "::error::No signed app-release.apk was produced."; exit 1; }
+          certs=$("$tools/apksigner" verify --verbose --print-certs "$apk")
+          echo "$certs"
+          if echo "$certs" | grep -q 'CN=Android Debug'; then echo "::error::APK is debug-signed."; exit 1; fi
+          badging=$("$tools/aapt2" dump badging "$apk" | head -1)
+          echo "$badging"
+          echo "$badging" | grep -q "versionName='$APP_VERSION'" || { echo "::error::APK versionName does not match $APP_VERSION."; exit 1; }
+          # Only the publishable Supabase key may ship in the bundled assets.
+          unzip -q "$apk" 'assets/*' -d "$RUNNER_TEMP/apk-contents"
+          node scripts/scan-public-config.mjs "$RUNNER_TEMP/apk-contents/assets"
+      - name: Name artifacts and record checksums
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          cp android/app/build/outputs/apk/release/app-release.apk "release/loughdin-$APP_VERSION.apk"
+          cp android/app/build/outputs/bundle/release/app-release.aab "release/loughdin-$APP_VERSION.aab"
+          (cd release && sha256sum *.apk *.aab > SHA256SUMS.txt && cat SHA256SUMS.txt)
+      - name: Remove decoded keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/loughdin-release.jks"
+      - name: Upload signed release
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: loughdin-${{ env.APP_VERSION }}-signed
+          path: release/
+          if-no-files-found: error
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release/* \
+            --title "Lough'd In $APP_VERSION" \
+            --notes "Signed Android release $APP_VERSION. Verify the download against SHA256SUMS.txt before installing." \
+            --generate-notes

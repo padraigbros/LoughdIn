@@ -7,6 +7,7 @@ test-results/
 !.env.example
 *.keystore
 *.jks
+keystore.properties
 android/.gradle/
 android/local.properties
 supabase/.branches/

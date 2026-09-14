@@ -1,4 +1,22 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+// package.json is the one version source. versionCode must only ever increase,
+// so bump package.json before every release: 0.3.0 -> 300, 1.2.3 -> 10203.
+def appVersion = new JsonSlurper().parse(rootProject.file('../package.json')).version
+def (versionMajor, versionMinor, versionPatch) = appVersion.tokenize('.-+')[0..2]*.toInteger()
+
+// Release signing comes from LOUGHDIN_* environment variables (CI) or an
+// uncommitted android/keystore.properties (local). Without all four values,
+// release builds stay unsigned and debug builds are unaffected.
+def signingProperties = new Properties()
+def signingFile = rootProject.file('keystore.properties')
+if (signingFile.exists()) signingFile.withInputStream { signingProperties.load(it) }
+def releaseSigning = ['KEYSTORE_FILE', 'KEYSTORE_PASSWORD', 'KEY_ALIAS', 'KEY_PASSWORD'].collectEntries { key ->
+    [(key): System.getenv("LOUGHDIN_${key}") ?: signingProperties.getProperty(key)]
+}
+def hasReleaseSigning = releaseSigning.values().every()
 
 android {
     namespace = "ie.loughdin.app"
@@ -7,8 +25,8 @@ android {
         applicationId "ie.loughdin.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode versionMajor * 10000 + versionMinor * 100 + versionPatch
+        versionName appVersion
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,10 +34,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile rootProject.file(releaseSigning.KEYSTORE_FILE)
+                storePassword releaseSigning.KEYSTORE_PASSWORD
+                keyAlias releaseSigning.KEY_ALIAS
+                keyPassword releaseSigning.KEY_PASSWORD
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (hasReleaseSigning) signingConfig signingConfigs.release
         }
     }
 }
