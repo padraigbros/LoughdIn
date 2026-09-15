@@ -82,16 +82,48 @@ export function stubServiceWorker({waiting = false, controlled = true} = {}) {
 }
 
 /**
- * `native` stands in for the Android app: it marks the page as running inside
- * Capacitor and supplies the functions app.js imports from vendor/native.js.
+ * The functions app.js imports from vendor/native.js, recording each call. The
+ * lifecycle listener is kept so a test can bring the app back to the
+ * foreground, and permission is granted unless the test says otherwise.
  */
-export async function mount(client, {serviceWorker = null, native = null} = {}) {
+export function stubNative({permission = true} = {}) {
+  const calls = [];
+  let onResume = null;
+  const record = (name, reply) => async (...args) => { calls.push({name, args}); return reply; };
+  return {
+    calls,
+    named: name => calls.filter(call => call.name === name),
+    /** Android reporting the activity active again (appStateChange, isActive). */
+    resume: () => onResume(),
+    isNativeApp: () => { calls.push({name: 'isNativeApp', args: []}); return true; },
+    registerNativeLifecycle: async options => {
+      calls.push({name: 'registerNativeLifecycle', args: [options]});
+      onResume = options.onResume;
+      return {remove: async () => { calls.push({name: 'removeLifecycle', args: []}); }};
+    },
+    requestLocalNotificationPermission: record('requestLocalNotificationPermission', permission),
+    scheduleSessionNotification: record('scheduleSessionNotification', true),
+    cancelSessionNotification: record('cancelSessionNotification', undefined),
+    signInWithGoogleNative: record('signInWithGoogleNative', {idToken: 'stub-google-id-token', nonce: 'stub-raw-nonce'}),
+  };
+}
+
+const NATIVE_EXPORTS = ['isNativeApp', 'registerNativeLifecycle', 'requestLocalNotificationPermission',
+  'scheduleSessionNotification', 'cancelSessionNotification', 'signInWithGoogleNative'];
+
+/**
+ * `native` supplies the functions app.js imports from vendor/native.js, and by
+ * default also marks the page as running inside Capacitor. Passing
+ * `nativePlatform: false` keeps the stub reachable on a plain website, so a
+ * test can prove the website never loads or calls it.
+ */
+export async function mount(client, {serviceWorker = null, native = null, nativePlatform = !!native} = {}) {
   const dom = new JSDOM(await readFile(new URL('../../index.html', import.meta.url), 'utf8'),
     {url: 'https://app.example.test/LoughdIn/', pretendToBeVisual: true});
   if (serviceWorker) {
     Object.defineProperty(dom.window.navigator, 'serviceWorker', {value: serviceWorker, configurable: true});
   }
-  if (native) dom.window.Capacitor = {isNativePlatform: () => true};
+  if (nativePlatform) dom.window.Capacitor = {isNativePlatform: () => true};
   globalThis.__stubNative = native;
   // jsdom refuses to navigate and will not let reload be redefined, so the app
   // is given a stand-in global to call. A reload is exactly what these tests
@@ -134,7 +166,10 @@ export async function mount(client, {serviceWorker = null, native = null} = {}) 
           contents: {
             config: "export const SUPABASE_URL='https://stub.test';export const SUPABASE_PUBLISHABLE_KEY='stub-key';export const GOOGLE_WEB_CLIENT_ID='stub-web-client.apps.googleusercontent.com';",
             supabase: 'export const createClient=()=>globalThis.__stubClient;',
-            native: 'export const signInWithGoogleNative=(...args)=>globalThis.__stubNative.signInWithGoogleNative(...args);',
+            // Evaluated only when imported, so the website path records nothing.
+            // Hand-written stubs without a call log (e.g. Google sign-in tests) are fine too.
+            native: "globalThis.__stubNative?.calls?.push({name:'import',args:[]});"
+              + NATIVE_EXPORTS.map(name => `export const ${name}=(...args)=>globalThis.__stubNative.${name}(...args);`).join(''),
           }[args.path],
           loader: 'js',
         }));
@@ -163,6 +198,7 @@ export async function mount(client, {serviceWorker = null, native = null} = {}) 
       await app.disposeApp();
       dom.window.close();
       delete globalThis.__stubClient;
+      delete globalThis.__stubNative;
       for (const [key, value] of originals) {
         if (value) Object.defineProperty(globalThis, key, value); else delete globalThis[key];
       }

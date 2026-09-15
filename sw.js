@@ -21,9 +21,7 @@ const SHELL_PATHS = [
   './src/scenes.js',
   './src/planner.js',
   './src/config.js',
-  './src/native.js',
   './vendor/supabase.js',
-  './vendor/native.js',
   './styles/enhancements.css',
   './styles/immersive.css'
 ];

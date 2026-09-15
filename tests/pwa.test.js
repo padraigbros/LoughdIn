@@ -40,12 +40,14 @@ test('service worker precaches the complete app shell and owns only its scope ca
     './src/scenes.js',
     './src/planner.js',
     './src/config.js',
-    './src/native.js',
     './vendor/supabase.js',
     './styles/enhancements.css'
   ]) {
     assert.match(worker, new RegExp(`['"]${shellFile.replaceAll('.', '\\.') }['"]`));
   }
+  // The Capacitor bundle ships inside the APK; precaching it would make every
+  // website visitor download it.
+  assert.doesNotMatch(worker, /native\.js/);
   assert.match(worker, /self\.registration\.scope/);
   assert.match(worker, /key\.startsWith\(OWN_CACHE_PREFIX\)/);
   assert.doesNotMatch(worker, /keys\.filter\(key => key !== CACHE_NAME\)/);
