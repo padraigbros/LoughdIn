@@ -47,6 +47,15 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
+      - name: Refuse any Facebook code in the APK
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/apk-scan"
+          unzip -q -o android/app/build/outputs/apk/debug/app-debug.apk -d "$out"
+          if grep -r -a -i -l 'facebook' "$out"; then
+            echo "::error::The APK contains Facebook code. Lough'd In ships none."
+            exit 1
+          fi
       - name: Record SHA-256 checksum
         working-directory: android/app/build/outputs/apk/debug
         run: sha256sum *.apk > SHA256SUMS.txt

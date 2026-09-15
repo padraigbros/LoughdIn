@@ -3,7 +3,7 @@ import {createStore} from './storage.js';
 import {createTimer,transition,timerDisplay,remainingMs,sessionFromTimer,nextAutomaticPhase,dailyStats,weekStats,localDateKey,createClock} from './timer.js';
 import {mountPlanner,renderPlanner,validateBlock} from './planner.js';
 import {createSync,importSummary} from './sync.js';
-import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY} from './config.js';
+import {SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY,GOOGLE_WEB_CLIENT_ID} from './config.js';
 
 const $=id=>document.getElementById(id), uuid=()=>crypto.randomUUID();
 const clock=createClock();
@@ -320,9 +320,22 @@ function signedOutViews({d,err,note,actions,heading}){
   const primary=(text,run)=>{const b=element('button',{class:'t-btn t-btn-primary'},text);b.onclick=()=>run(b);actions.append(b);return b;};
   const submitOn=(input,button)=>{input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();button.click();}};};
 
+  // The Android app cannot show Google's sign-in page in its WebView, so it asks
+  // the system account sheet for an ID token instead of redirecting.
   const googleButton=()=>{
     const g=element('button',{class:'t-btn t-btn-google',type:'button'},'Sign in with Google');
-    g.onclick=async()=>{g.disabled=true;try{const result=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:authRedirectURL()}});if(result.error)throw result.error;}catch(e){say(err,e.message);g.disabled=false;}};
+    g.onclick=async()=>{g.disabled=true;try{
+      if(window.Capacitor?.isNativePlatform?.()){
+        const {signInWithGoogleNative}=await import('../vendor/native.js');
+        const {idToken,nonce}=await signInWithGoogleNative({webClientId:GOOGLE_WEB_CLIENT_ID});
+        const result=await client.auth.signInWithIdToken({provider:'google',token:idToken,nonce});
+        if(result.error)throw result.error;
+        d.close();
+      }else{
+        const result=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:authRedirectURL()}});
+        if(result.error)throw result.error;
+      }
+    }catch(e){say(err,e.message);}finally{g.disabled=false;}};
     return g;
   };
 

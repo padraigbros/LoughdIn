@@ -83,6 +83,12 @@ jobs:
           # Only the publishable Supabase key may ship in the bundled assets.
           unzip -q "$apk" 'assets/*' -d "$RUNNER_TEMP/apk-contents"
           node scripts/scan-public-config.mjs "$RUNNER_TEMP/apk-contents/assets"
+          # Lough'd In ships no Facebook code in any form.
+          unzip -q -o "$apk" -d "$RUNNER_TEMP/apk-all"
+          if grep -r -a -i -l 'facebook' "$RUNNER_TEMP/apk-all"; then
+            echo "::error::The APK contains Facebook code. Lough'd In ships none."
+            exit 1
+          fi
       - name: Name artifacts and record checksums
         run: |
           set -euo pipefail

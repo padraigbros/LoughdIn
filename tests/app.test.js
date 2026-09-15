@@ -16,7 +16,7 @@ test('existing screen persists capture, focus transitions, matrix edits and cale
   dom.window.HTMLDialogElement.prototype.showModal=function(){this.open=true;};
   dom.window.HTMLDialogElement.prototype.close=function(){this.open=false;this.dispatchEvent(new dom.window.Event('close'));};
   const appRoot=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
-  const bundle=await build({absWorkingDir:appRoot,entryPoints:['src/app.js'],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',plugins:[{name:'offline-account-fixture',setup(builder){builder.onResolve({filter:/^\.\/config\.js$/},()=>({path:'config',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"export const SUPABASE_URL='';export const SUPABASE_PUBLISHABLE_KEY='';",loader:'js'}));}}]});
+  const bundle=await build({absWorkingDir:appRoot,entryPoints:['src/app.js'],bundle:true,write:false,format:'esm',platform:'browser',target:'es2022',plugins:[{name:'offline-account-fixture',setup(builder){builder.onResolve({filter:/^\.\/config\.js$/},()=>({path:'config',namespace:'fixture'}));builder.onLoad({filter:/.*/,namespace:'fixture'},()=>({contents:"export const SUPABASE_URL='';export const SUPABASE_PUBLISHABLE_KEY='';export const GOOGLE_WEB_CLIENT_ID='';",loader:'js'}));}}]});
   let app,observer;try{
     app=await import('data:text/javascript;base64,'+Buffer.from(bundle.outputFiles[0].text).toString('base64'));
     assert.equal(app.authRedirectURL('https://padraigbros.github.io/LoughdIn/index.html?code=secret#token'),'https://padraigbros.github.io/LoughdIn/');
