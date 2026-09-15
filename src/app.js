@@ -9,6 +9,9 @@ const $=id=>document.getElementById(id), uuid=()=>crypto.randomUUID();
 const clock=createClock();
 let timerInterval,quoteInterval,authSubscription;
 let store,state,unsubscribe,deviceId,account=null,sync=null,client=null,list='work',view='list',busy=false,completing=false;
+let nativeApp,alarmFor,alarmQueue=Promise.resolve(),askedForAlarms=false,lifecycle=null;
+// Only the Android app loads the Capacitor bundle; the website never fetches it.
+const native=()=>nativeApp??=(window.Capacitor?.isNativePlatform?.()?import('../vendor/native.js'):null);
 let syncState={state:'local',pending:0};
 const activeTasks=s=>Object.entries(s.tasks).flatMap(([list,tasks])=>tasks.filter(t=>!t.deletedAt).map(t=>({...t,list})));
 const findTask=(s,id)=>Object.values(s.tasks).flat().find(t=>t.id===id&&!t.deletedAt);
@@ -86,7 +89,7 @@ async function openStore(namespace){
   render();status('');
 }
 function render(){
-  if(!state)return;renderTimer();renderTasks();renderStats();
+  if(!state)return;renderTimer();renderTasks();renderStats();reconcileAlarm();
   for(const mode of ['work','short','long']){const mins=state.settings.durations[mode]/60;$('dur-'+mode).value=mins;$('dur-'+mode+'-val').textContent=mins+'m';}
   $('dur-goal').value=state.settings.goal;$('dur-goal-val').textContent=state.settings.goal;$('auto-cycle').checked=state.settings.autoCycle;
   $('task-list').hidden=view!=='list';$('planning-view').hidden=view==='list';
@@ -188,6 +191,18 @@ async function tick(){
       return session;
     },sessionCommand);if(completed){status('Session finished');notifyComplete();}
   }catch(error){fail(error);}finally{completing=false;}
+}
+/** The OS alarm follows the saved timer, so completion, auto-cycle and changes from another device move or clear it just as the buttons here do. */
+function reconcileAlarm(force=false){
+  const n=native();if(!n)return;const t=state?.timer;const due=t?.status==='running'&&Number.isFinite(t.deadlineAt)?t.deadlineAt:null;
+  if(!force&&due===alarmFor)return;alarmFor=due;
+  alarmQueue=alarmQueue.then(async()=>{const m=await n;await(due?m.scheduleSessionNotification(due):m.cancelSessionNotification());}).catch(error=>console.error(error));
+}
+/** Asked from the first Start press, never at launch, where an Android prompt would arrive unexplained. */
+function askForAlarms(){
+  const n=native();if(!n||askedForAlarms)return;askedForAlarms=true;
+  // The session starts without waiting on the prompt, so its alarm is set again once allowed.
+  n.then(m=>m.requestLocalNotificationPermission()).then(granted=>{if(granted)reconcileAlarm(true);}).catch(error=>console.error(error));
 }
 function notifyComplete(){if('Notification'in window&&Notification.permission==='granted'&&document.hidden)navigator.serviceWorker?.ready.then(r=>r.showNotification("Lough’d In",{body:'Your session has finished. Take a breath.',tag:'session-complete'})).catch(()=>{});}
 function renderStats(){const stats=dailyStats(state.sessions);$('goal-num').textContent=`${stats.pomodoros}/${state.settings.goal}`;$('goal-ring-fg').setAttribute('stroke-dasharray',`${Math.min(1,stats.pomodoros/state.settings.goal)*169.6} 169.6`);$('stat-time').textContent=Math.floor(stats.focusMs/60000)+'m';$('stat-tasks').textContent=activeTasks(state).filter(t=>t.done).length;
@@ -451,15 +466,18 @@ function events(){
   $('task-add-btn').onclick=action(addTask);$('task-input').onkeydown=e=>{if(e.key==='Enter')action(addTask)(e);};
   document.querySelectorAll('[data-list]').forEach(b=>b.onclick=()=>{list=b.dataset.list;render();});
   document.querySelectorAll('[data-mode]').forEach(b=>b.onclick=action(()=>timerAction('mode',b.dataset.mode)));
-  $('btn-start').onclick=action(()=>timerAction(state.timer.status==='running'?'pause':'start'));$('btn-reset').onclick=action(()=>timerAction('reset'));$('btn-finish').onclick=action(()=>timerAction('finish'));$('btn-interrupt').onclick=action(()=>timerAction('interrupt'));
+  $('btn-start').onclick=action(()=>{const starting=state.timer.status!=='running';if(starting)askForAlarms();return timerAction(starting?'start':'pause');});$('btn-reset').onclick=action(()=>timerAction('reset'));$('btn-finish').onclick=action(()=>timerAction('finish'));$('btn-interrupt').onclick=action(()=>timerAction('interrupt'));
   $('btn-settings').onclick=()=>{$('settings-pop').classList.toggle('show');$('btn-settings').setAttribute('aria-expanded',String($('settings-pop').classList.contains('show')));};
   for(const mode of ['work','short','long'])$('dur-'+mode).onchange=action(e=>save(s=>{s.settings.durations[mode]=Number(e.target.value)*60;if(s.timer.status==='idle'&&s.timer.phase===mode)s.timer=createTimer({phase:mode,durations:s.settings.durations,task:selected(s)});}));
   $('dur-goal').onchange=action(e=>save(s=>{s.settings.goal=Number(e.target.value);}));$('auto-cycle').onchange=action(e=>save(s=>{s.settings.autoCycle=e.target.checked;}));
   $('btn-zen').onclick=()=>toggleZen(true);$('zen-exit-btn').onclick=()=>toggleZen(false);document.addEventListener('keydown',e=>{if(e.key==='Escape'){toggleZen(false);$('settings-pop').classList.remove('show');}});
   const fromSettings=open=>()=>{$('settings-pop').classList.remove('show');$('btn-settings').setAttribute('aria-expanded','false');open();};
   $('btn-history').onclick=fromSettings(sessionHistory);$('btn-backup').onclick=fromSettings(backups);$('btn-account').onclick=accountDialog;
-  document.addEventListener('visibilitychange',()=>{if(!document.hidden){clock.resync();tick();}});window.addEventListener('pageshow',()=>{clock.resync();tick();});
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)wake();});window.addEventListener('pageshow',wake);
 }
+function wake(){clock.resync();tick();}
+/** Android can freeze the WebView, and changes saved meanwhile never announced themselves, so a resumed app reads the saved state again before catching the timer up. */
+async function resume(){if(store&&state){state=await store.readState();render();}wake();}
 /**
  * Takes a downloaded update rather than waiting to be asked.
  *
@@ -521,4 +539,5 @@ async function serviceWorker(){
 setupShell();scenery();music();events();
 await openStore('guest').catch(fail);await auth().catch(fail);serviceWorker().catch(()=>status('Offline installation unavailable. Your tasks are saved locally.'));
 timerInterval=setInterval(tick,500);
-export function disposeApp(){clearInterval(timerInterval);clearInterval(quoteInterval);sync?.stop();unsubscribe?.();store?.close();authSubscription?.unsubscribe();client?.auth.stopAutoRefresh();}
+native()?.then(m=>m.registerNativeLifecycle({onResume:()=>resume().catch(fail)})).then(handle=>{lifecycle=handle;}).catch(fail);
+export function disposeApp(){clearInterval(timerInterval);clearInterval(quoteInterval);sync?.stop();unsubscribe?.();store?.close();authSubscription?.unsubscribe();client?.auth.stopAutoRefresh();lifecycle?.remove();}
