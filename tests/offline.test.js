@@ -11,6 +11,12 @@ async function worker(){const listeners={},stores=new Map();let skips=0,network=
 test('offline worker serves its complete scoped shell without touching API requests',async()=>{
   const w=await worker();await w.run('install');assert.equal(w.skips(),0);
   const nav=await w.run('fetch',{request:{method:'GET',mode:'navigate',url:'https://example.test/LoughdIn/'}});assert.match(await nav.text(),/LoughdIn\/index.html/);assert.equal(w.network(),0);
+  // A sign-in return carries a query string and must still open the app.
+  const oauthReturn=await w.run('fetch',{request:{method:'GET',mode:'navigate',url:'https://example.test/LoughdIn/?code=abc'}});assert.match(await oauthReturn.text(),/LoughdIn\/index.html/);
+  const indexNav=await w.run('fetch',{request:{method:'GET',mode:'navigate',url:'https://example.test/LoughdIn/index.html'}});assert.match(await indexNav.text(),/LoughdIn\/index.html/);
+  // Other pages in scope, such as the privacy policy, are not replaced by the app.
+  assert.equal(await w.run('fetch',{request:{method:'GET',mode:'navigate',url:'https://example.test/LoughdIn/privacy.html'}}),undefined);
+  assert.equal(w.network(),0);
   const module=await w.run('fetch',{request:{method:'GET',url:'https://example.test/LoughdIn/src/config.js'}});assert.match(await module.text(),/config.js/);
   for(const asset of ['assets/lough-guitane.png','icons/keyhole.svg','styles/immersive.css']){
     const response=await w.run('fetch',{request:{method:'GET',url:'https://example.test/LoughdIn/'+asset}});

@@ -109,6 +109,7 @@ body, #app { background: #102f2d; color: var(--ink); }
 .account-actions { grid-area: account; }
 .hero-foot { grid-area: footer; justify-content: center; color: #e0e8e3; font-size: 12px; }
 #scene-label { opacity: 1; }
+.privacy-link { color: #e0e8e3; text-underline-offset: 3px; display: inline-flex; align-items: center; min-height: 44px; padding-inline: 8px; }
 #settings-pop { max-height: calc(100svh - 120px); overflow-y: auto; width: min(340px, calc(100vw - 32px)); background: #102f2dfb; }
 .set-row { font-size: 14px; min-height: 44px; }
 .set-row input { min-width: 0; }
