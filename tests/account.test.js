@@ -14,7 +14,8 @@ test('account identity is quiet unless action is needed', async () => {
   const harness = await mount(stubClient());
   try {
     const button = document.getElementById('btn-account');
-    assert.equal(button.nextElementSibling.id, 'btn-settings');
+    assert.equal(button.previousElementSibling.id, 'btn-settings');
+    assert.equal(button.nextElementSibling, null, 'the account is the rightmost header control');
     const {accountSummary, syncMessage} = harness.app;
     const account = {email: 'aoife@example.test'};
     assert.equal(accountSummary(null).dot, false);
