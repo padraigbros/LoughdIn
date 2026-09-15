@@ -1,12 +1,12 @@
-import {Capacitor} from '@capacitor/core';
+import {Capacitor, registerPlugin} from '@capacitor/core';
 import {App} from '@capacitor/app';
 import {LocalNotifications} from '@capacitor/local-notifications';
-import {SocialLogin} from '@capgo/capacitor-social-login';
 import {createGoogleNonce} from './google-nonce.js';
 
 const NATIVE = Capacitor.isNativePlatform();
 const NOTIFICATION_ID = 42801;
-let googleReady = null;
+// App-local Android plugin: android/app/src/main/java/ie/loughdin/app/GoogleSignInPlugin.java
+const GoogleSignIn = registerPlugin('GoogleSignIn');
 
 export function isNativeApp() {
   return NATIVE;
@@ -20,11 +20,8 @@ export function isNativeApp() {
  */
 export async function signInWithGoogleNative({webClientId}) {
   if (!NATIVE) throw new Error('Native Google sign-in is only available in the Android app.');
-  googleReady ??= SocialLogin.initialize({google: {webClientId, mode: 'online'}}).catch(error => { googleReady = null; throw error; });
-  await googleReady;
   const nonce = await createGoogleNonce();
-  const response = await SocialLogin.login({provider: 'google', options: {nonce: nonce.hashed, style: 'bottom', filterByAuthorizedAccounts: false}});
-  const idToken = response?.result?.idToken;
+  const {idToken} = await GoogleSignIn.signIn({webClientId, nonce: nonce.hashed});
   if (!idToken) throw new Error('Google did not return a sign-in token. Try again.');
   return {idToken, nonce: nonce.raw};
 }

@@ -120,8 +120,11 @@ page names that domain. A Supabase custom domain (paid add-on) is the fix, and
 its callback must then be added to the client alongside the existing one.
 
 **Android.** Google does not allow its sign-in page inside an app's WebView, so
-the app uses `@capgo/capacitor-social-login`, which shows the system account
-sheet (Credential Manager). The resulting ID token goes to
+the app uses its own small plugin, `GoogleSignInPlugin.java`, which calls
+Android's Credential Manager directly and shows the system account sheet. It
+supports Google only; the app ships no other identity-provider code, and
+`tests/no-facebook.test.js` plus the APK scan in CI keep it that way. The
+resulting ID token goes to
 `supabase.auth.signInWithIdToken` with a nonce: Google receives the SHA-256 hex
 digest and Supabase the raw value (`src/google-nonce.js`). There is no redirect
 URL or deep link, and nothing was added to the allow list.
