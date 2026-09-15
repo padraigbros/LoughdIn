@@ -63,7 +63,10 @@ self.addEventListener('fetch', event => {
   if (requestURL.origin !== self.location.origin) return;
   if (!requestURL.pathname.startsWith(REGISTRATION_SCOPE.pathname)) return;
 
+  // Only the app itself is served from the shell. Other pages in scope, such
+  // as privacy.html, must load from the network or they would show the app.
   if (request.mode === 'navigate') {
+    if (requestURL.pathname !== REGISTRATION_SCOPE.pathname && requestURL.href.split(/[?#]/)[0] !== INDEX_URL) return;
     event.respondWith((async () => { const cache = await caches.open(CACHE_NAME); return await cache.match(INDEX_URL) || fetch(request); })());
     return;
   }

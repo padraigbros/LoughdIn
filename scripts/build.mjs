@@ -8,7 +8,7 @@ const distRoot = path.resolve(projectRoot, 'dist');
 
 // Keep the publish surface explicit. Source snapshots, documentation, local
 // configuration and repository metadata must never enter the Pages artifact.
-const rootFiles = ['index.html', 'manifest.json', 'sw.js'];
+const rootFiles = ['index.html', 'manifest.json', 'privacy.html', 'sw.js'];
 const recursiveRoots = ['assets', 'icons', 'src', 'styles', 'vendor'];
 const requiredSourceFiles = ['src/planner.js'];
 const excludedName = /(^|[._-])(env|secret|secrets|credentials?|token|snapshot)([._-]|$)|\.(?:md|markdown|map)$/i;

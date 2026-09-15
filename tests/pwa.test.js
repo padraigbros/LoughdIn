@@ -74,6 +74,7 @@ test('build emits only the explicitly publishable app tree', () => {
   for (const shellFile of [
     'index.html',
     'manifest.json',
+    'privacy.html',
     'sw.js',
     'icons/icon-192.png',
     'icons/icon-512.png',
@@ -98,7 +99,7 @@ test('build emits only the explicitly publishable app tree', () => {
   for (const file of published) {
     assert.doesNotMatch(file, /(?:^|[./_-])(?:\.env|secret|credential|token|snapshot)(?:[./_-]|$)/i);
     assert.doesNotMatch(file, /\.(?:md|markdown|map)$/i);
-    assert.ok(/^(?:index\.html|manifest\.json|sw\.js|(?:assets|icons|src|styles|vendor)\/)/.test(file), file);
+    assert.ok(/^(?:index\.html|manifest\.json|privacy\.html|sw\.js|(?:assets|icons|src|styles|vendor)\/)/.test(file), file);
   }
 });
 
