@@ -52,19 +52,19 @@ function setupShell(){
   const toolbar=element('div',{class:'view-toolbar','aria-label':'Task view'});
   for(const name of ['list','matrix','plan']){const b=element('button',{'data-view':name,'aria-pressed':String(name===view)},name[0].toUpperCase()+name.slice(1));b.onclick=()=>{view=name;render();};toolbar.append(b);}
   $('task-list').before(toolbar);$('task-list').after(element('div',{id:'planning-view',hidden:''}));
-  // Keep account identity beside settings without routine sync indicators.
+  // The account sits at the far right, after settings, as on most sites.
   const accountBtn=element('button',{class:'brand-btn account-btn',id:'btn-account','aria-haspopup':'dialog'});
   accountBtn.append(element('span',{class:'account-glyph'}),element('span',{class:'account-dot','aria-hidden':'true'}));
-  $('btn-settings').before(accountBtn);
-  const footer=element('div',{class:'account-actions'});
-  footer.append(element('button',{class:'subtle-btn',id:'btn-backup'},'Backup'));
-  const history=element('button',{class:'subtle-btn',id:'btn-history'},'Session history');footer.append(history);
+  $('btn-settings').after(accountBtn);
+  // Session history, Backup and Privacy live in settings. This row only holds
+  // an "Update ready" offer, so it stays out of the way until one arrives.
+  const updates=element('div',{class:'account-actions'});
   const message=element('div',{id:'save-status',class:'save-status',role:'status','aria-live':'polite'},'Opening your tasks…');
-  document.querySelector('.hero-foot').before(footer);
+  $('content').append(updates);
   document.querySelector('.brand-row').append(message);
   $('content').dataset.section='focus';
   for(const mode of ['work','short','long','goal'])$('dur-'+mode).previousElementSibling.htmlFor='dur-'+mode;
-  $('settings-pop').setAttribute('aria-label','Timer settings');
+  $('settings-pop').setAttribute('aria-label','Settings');
   mountPlanner($('planning-view'),{onViewChange:next=>{view=next;render();},onTaskUpdate:(id,patch)=>updateTask(id,patch).catch(fail),onBlockSave:saveBlock,onBlockDelete:id=>deleteBlock(id).catch(fail),onFocusTask:id=>focusTask(id).catch(fail)});
   renderAccount();
 }
@@ -456,7 +456,8 @@ function events(){
   for(const mode of ['work','short','long'])$('dur-'+mode).onchange=action(e=>save(s=>{s.settings.durations[mode]=Number(e.target.value)*60;if(s.timer.status==='idle'&&s.timer.phase===mode)s.timer=createTimer({phase:mode,durations:s.settings.durations,task:selected(s)});}));
   $('dur-goal').onchange=action(e=>save(s=>{s.settings.goal=Number(e.target.value);}));$('auto-cycle').onchange=action(e=>save(s=>{s.settings.autoCycle=e.target.checked;}));
   $('btn-zen').onclick=()=>toggleZen(true);$('zen-exit-btn').onclick=()=>toggleZen(false);document.addEventListener('keydown',e=>{if(e.key==='Escape'){toggleZen(false);$('settings-pop').classList.remove('show');}});
-  $('btn-history').onclick=sessionHistory;$('btn-backup').onclick=backups;$('btn-account').onclick=accountDialog;
+  const fromSettings=open=>()=>{$('settings-pop').classList.remove('show');$('btn-settings').setAttribute('aria-expanded','false');open();};
+  $('btn-history').onclick=fromSettings(sessionHistory);$('btn-backup').onclick=fromSettings(backups);$('btn-account').onclick=accountDialog;
   document.addEventListener('visibilitychange',()=>{if(!document.hidden){clock.resync();tick();}});window.addEventListener('pageshow',()=>{clock.resync();tick();});
 }
 /**

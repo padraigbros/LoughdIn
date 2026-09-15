@@ -139,11 +139,6 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
 .music-btn.on{background:rgba(255,255,255,.9);color:var(--sage-darker);border-color:transparent;font-weight:500}
 #music-vol{width:clamp(70px,15vw,100px);accent-color:#fff;height:4px}
 
-/* Footer */
-.hero-foot{width:100%;display:flex;justify-content:flex-end;align-items:center;font-size:clamp(9px,2vw,10px);color:rgba(255,255,255,.4);gap:8px;padding-bottom:env(safe-area-inset-bottom)}
-#scene-label{font-style:italic;letter-spacing:.5px;text-transform:none;opacity:.7}
-.scene-btn{background:rgba(0,0,0,.25);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.6);width:clamp(26px,6vw,30px);height:clamp(26px,6vw,30px);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:12px}
-
 /* Settings */
 #settings-pop{display:none;position:fixed;top:clamp(60px,15vw,80px);right:clamp(1rem,4vw,1.5rem);background:rgba(18,22,16,.94);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.15);border-radius:var(--r);padding:1.1rem;width:clamp(220px,80vw,260px);z-index:100;box-shadow:0 8px 32px rgba(0,0,0,.4)}
 #settings-pop.show{display:block}
@@ -155,7 +150,7 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
 .set-check input{accent-color:var(--warm);width:15px;height:15px}
 
 /* Zen */
-#app.zen #content>*:not(.timer-block):not(.hero-foot):not(.quote-carousel){display:none}
+#app.zen #content>*:not(.timer-block):not(.quote-carousel){display:none}
 #app.zen #timer-display{font-size:clamp(88px,26vw,150px)}
 #zen-quote{position:fixed;bottom:clamp(6rem,15vh,10rem);left:50%;transform:translateX(-50%);text-align:center;width:90%;max-width:480px;opacity:0;pointer-events:none;z-index:3;display:none;transition:opacity .8s}
 #app.zen #zen-quote{opacity:1;display:block}
@@ -254,10 +249,6 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
         <input type="range" id="music-vol" min="0" max="100" value="40" step="1">
       </div>
     </div>
-    <div class="hero-foot">
-      <span id="scene-label">Lough Guitane</span>
-      <a class="privacy-link" href="privacy.html">Privacy</a>
-    </div>
   </div>
   <div id="zen-quote"><div id="zen-quote-text"></div><div id="zen-quote-attr"></div></div>
   <div id="zen-music"><div class="panel music-row" id="zen-music-dock"></div></div>
@@ -268,6 +259,12 @@ h2.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,
     <div class="set-row"><label>Long break</label><input type="range" id="dur-long" min="5" max="30" value="15" step="5"><span id="dur-long-val">15m</span></div>
     <div class="set-row"><label>Daily goal</label><input type="range" id="dur-goal" min="1" max="16" value="6" step="1"><span id="dur-goal-val">6</span></div>
     <label class="set-check"><input type="checkbox" id="auto-cycle"> Auto-cycle sessions</label>
+    <div class="set-section" role="group" aria-labelledby="set-data-heading">
+      <p class="set-heading" id="set-data-heading">Your data</p>
+      <button type="button" class="set-link" id="btn-history">Session history</button>
+      <button type="button" class="set-link" id="btn-backup">Backup</button>
+      <a class="set-link" id="link-privacy" href="privacy.html">Privacy</a>
+    </div>
   </div>
 </div>
 <audio id="audio" crossorigin="anonymous"></audio>
