@@ -320,8 +320,16 @@ function signedOutViews({d,err,note,actions,heading}){
   const primary=(text,run)=>{const b=element('button',{class:'t-btn t-btn-primary'},text);b.onclick=()=>run(b);actions.append(b);return b;};
   const submitOn=(input,button)=>{input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();button.click();}};};
 
+  const googleButton=()=>{
+    const g=element('button',{class:'t-btn t-btn-google',type:'button'},'Sign in with Google');
+    g.onclick=async()=>{g.disabled=true;try{const result=await client.auth.signInWithOAuth({provider:'google',options:{redirectTo:authRedirectURL()}});if(result.error)throw result.error;}catch(e){say(err,e.message);g.disabled=false;}};
+    return g;
+  };
+
   function signIn(prefill=''){
     view('Sign in',current=>{
+      body.append(googleButton());
+      body.append(element('div',{class:'auth-divider'},'or'));
       body.append(element('p',{},'Your workspace, across your devices.'));
       body.append(element('p',{class:'auth-hint'},'You can bring your guest tasks into your account after signing in.'));
       const email=authField('Email',{type:'email',autocomplete:'email',required:''});
@@ -360,6 +368,8 @@ function signedOutViews({d,err,note,actions,heading}){
 
   function signUp(prefill=''){
     view('Create your account',current=>{
+      body.append(googleButton());
+      body.append(element('div',{class:'auth-divider'},'or'));
       body.append(element('p',{},'Your tasks sync across every device you sign in on. Guest tasks stay on this device until you choose to import them.'));
       const email=authField('Email',{type:'email',autocomplete:'email',required:''});
       email.value=prefill;
