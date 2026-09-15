@@ -14,32 +14,25 @@ const activeTasks=s=>Object.entries(s.tasks).flatMap(([list,tasks])=>tasks.filte
 const findTask=(s,id)=>Object.values(s.tasks).flat().find(t=>t.id===id&&!t.deletedAt);
 const selected=s=>activeTasks(s).find(t=>t.id===s.activeTask)||null;
 function element(tag,attrs={},text=''){const el=document.createElement(tag);for(const [key,value] of Object.entries(attrs))el.setAttribute(key,value);el.textContent=text;return el;}
-const SYNC_MESSAGES={local:'Saved on this device',syncing:'Saved on this device · syncing…',pending:'Saved on this device · %n change%s pending',offline:'Offline · saved on this device',auth:'Saved on this device · sign in to sync',conflict:'Saved on this device · open your account to resolve changes',error:'Saved on this device · sync needs attention',synced:'All changes synced'};
+const SYNC_MESSAGES={local:'',syncing:'',pending:'',offline:'',auth:'Open your account to sign in again.',conflict:'Open your account to review a conflicting change.',error:'We couldn’t update your account. We’ll keep trying.',synced:''};
 const SYNC_TONES={synced:'ok',syncing:'work',pending:'work',local:'idle',offline:'idle',auth:'warn',conflict:'alert',error:'alert'};
 export function syncMessage(state,pending=0){return (SYNC_MESSAGES[state]||SYNC_MESSAGES.local).replace('%n',pending).replace('%s',pending===1?'':'s');}
-/**
- * What the account control in the brand row says without being opened. Guest
- * and account data are kept deliberately separate, so the signed-in address
- * has to be legible during normal use rather than only inside the dialog.
- */
+/** Account identity stays available; only actionable problems need a badge. */
 export function accountSummary(account,sync={},available=true){
   if(!account)return {initial:'',tone:'idle',badge:'',dot:false,title:available
-    ?'Not signed in. Tasks stay on this device. Open to sign in and sync across devices.'
-    :'Not signed in. Cloud sync is unavailable, so tasks are saved on this device.'};
+    ?'Not signed in. Open your account.'
+    :'Sign in is currently unavailable.'};
   const initial=(account.email||'').trim().charAt(0).toUpperCase()||'?';
   const email=account.email||'Your account';
-  if(!available)return {initial,tone:'idle',badge:'',dot:false,title:email+' · cloud sync is unavailable'};
+  if(!available)return {initial,tone:'idle',badge:'',dot:false,title:email};
   const state=sync.state||'local';
   const pending=sync.pending||0;
   return {
     initial,
-    tone:SYNC_TONES[state]||'idle',
-    badge:state==='conflict'||state==='error'?'!':pending>0?String(Math.min(pending,9)):'',
-    // The dot is the sync state. There is no sync to report without an account
-    // reaching a server, and a grey dot carrying nothing reads as an unread
-    // count, so it is shown only when it means something.
-    dot:true,
-    title:email+' · '+syncMessage(state,pending),
+    tone:['auth','conflict','error'].includes(state)?SYNC_TONES[state]:'idle',
+    badge:['auth','conflict','error'].includes(state)?'!':'',
+    dot:['auth','conflict','error'].includes(state),
+    title:email+(syncMessage(state,pending)?' · '+syncMessage(state,pending):''),
   };
 }
 function status(text,error=false){$('save-status').textContent=text;$('save-status').dataset.error=String(error);}
@@ -47,7 +40,7 @@ function fail(error){console.error(error);status(error.message||'Unable to save.
 function command(kind,entityId,payload,baseRevision=0){return {protocol:1,opId:uuid(),deviceId,kind,entityId,baseRevision,payload};}
 async function save(mutator,makeCommand){
   const result=await store.mutate(mutator,{command:account&&makeCommand?(result,draft)=>result?makeCommand(result,draft):null:undefined});
-  state=result.state;render();status(account?'Saved on this device · sync pending':'Saved on this device');sync?.flush().catch(fail);return result.result;
+  state=result.state;render();status('');sync?.flush().catch(fail);return result.result;
 }
 function action(fn){return async event=>{try{await fn(event);}catch(error){fail(error);}};}
 function setupShell(){
@@ -59,9 +52,7 @@ function setupShell(){
   const toolbar=element('div',{class:'view-toolbar','aria-label':'Task view'});
   for(const name of ['list','matrix','plan']){const b=element('button',{'data-view':name,'aria-pressed':String(name===view)},name[0].toUpperCase()+name.slice(1));b.onclick=()=>{view=name;render();};toolbar.append(b);}
   $('task-list').before(toolbar);$('task-list').after(element('div',{id:'planning-view',hidden:''}));
-  // Who you are signed in as and whether sync is working are ambient, not
-  // occasional, so the control sits beside settings and carries both at a
-  // glance rather than only once a dialog is open.
+  // Keep account identity beside settings without routine sync indicators.
   const accountBtn=element('button',{class:'brand-btn account-btn',id:'btn-account','aria-haspopup':'dialog'});
   accountBtn.append(element('span',{class:'account-glyph'}),element('span',{class:'account-dot','aria-hidden':'true'}));
   $('btn-settings').before(accountBtn);
@@ -92,7 +83,7 @@ async function openStore(namespace){
   deviceId=await store.getDeviceId();state=await store.readState();
   if(!state.timer){state=(await store.mutate(s=>{s.timer=createTimer({durations:s.settings.durations,task:selected(s)});})).state;}
   unsubscribe=store.subscribe((fresh,error)=>{if(error)return fail(error);state=fresh;render();});
-  render();status(account?'Saved on this device · connecting':'Saved on this device');
+  render();status('');
 }
 function render(){
   if(!state)return;renderTimer();renderTasks();renderStats();
@@ -195,7 +186,7 @@ async function tick(){
         // A late wake-up must never silently begin work that the user did not observe.
         s.timer=document.visibilityState==='visible'&&clock.now()-previous.deadlineAt<3000?transition(fresh,'start',clock.now()):fresh;}
       return session;
-    },sessionCommand);if(completed){status('Session finished · saved');notifyComplete();}
+    },sessionCommand);if(completed){status('Session finished');notifyComplete();}
   }catch(error){fail(error);}finally{completing=false;}
 }
 function notifyComplete(){if('Notification'in window&&Notification.permission==='granted'&&document.hidden)navigator.serviceWorker?.ready.then(r=>r.showNotification("Lough’d In",{body:'Your session has finished. Take a breath.',tag:'session-complete'})).catch(()=>{});}
@@ -239,7 +230,8 @@ function showSection(section){
   render();
   const target=$(section==='plan'?'tasks-panel':section==='progress'?'progress-panel':'focus-workspace');
   target.focus({preventScroll:true});
-  target.scrollIntoView?.({block:'nearest',behavior:'instant'});
+  // Each workspace opens at its heading, including inside the phone scroller.
+  $('app').scrollTop=0;document.documentElement.scrollTop=0;document.body.scrollTop=0;
 }
 /**
  * The one route from trying the app to keeping what you made, so it says what
@@ -279,11 +271,10 @@ function importGuestButton(err,note){
 }
 async function accountDialog(){
   const {d,err,note,actions,show}=dialog(account?'Your account':'Sign in');
-  if(!client){d.insertBefore(element('p',{},'Tasks are saved on this device. Cloud sync is unavailable until the connection can open.'),err);show();return;}
+  if(!client){d.insertBefore(element('p',{},'Sign in is temporarily unavailable. You can keep using your workspace.'),err);show();return;}
   if(account){
-    d.insertBefore(element('p',{},'Signed in as '+(account.email||'your account')+'. Your account data is separate from guest data.'),err);
+    d.insertBefore(element('p',{},'Signed in as '+(account.email||'your account')+'.'),err);
     actions.append(importGuestButton(err,note));
-    const retry=element('button',{class:'subtle-btn'},'Sync now');retry.onclick=async()=>{try{await sync.flush();}catch(e){err.textContent=e.message;}};actions.append(retry);
     const out=element('button',{class:'subtle-btn'},'Sign out');out.onclick=async()=>{out.disabled=true;try{const result=await client.auth.signOut();if(result.error)throw result.error;d.close();}catch(e){err.textContent=e.message;out.disabled=false;}};actions.append(out);
     show();
     try{const conflicts=await sync.listConflicts();for(const conflict of conflicts){const row=element('div',{class:'sync-conflict'});row.append(element('p',{},'A change needs your choice. '+(conflict.entityType||conflict.kind||'Record')));if(conflict.reason)row.append(element('p',{class:'sync-conflict-reason'},conflict.reason));const choose=async(strategy,button)=>{button.disabled=true;try{await sync.resolveConflict(conflict.opId,{strategy});row.remove();}catch(e){err.textContent=e.message;button.disabled=false;}};const server=element('button',{class:'subtle-btn'},'Use synced version');server.onclick=()=>choose('server',server);row.append(server);const mine=element('button',{class:'subtle-btn'},'Keep mine');mine.onclick=()=>choose('local',mine);row.append(mine);d.insertBefore(row,err);}}catch(e){err.textContent=e.message;}
@@ -331,7 +322,8 @@ function signedOutViews({d,err,note,actions,heading}){
 
   function signIn(prefill=''){
     view('Sign in',current=>{
-      body.append(element('p',{},'Sign in to bring your tasks together across devices. Guest tasks stay here until you choose to import them.'));
+      body.append(element('p',{},'Your workspace, across your devices.'));
+      body.append(element('p',{class:'auth-hint'},'You can bring your guest tasks into your account after signing in.'));
       const email=authField('Email',{type:'email',autocomplete:'email',required:''});
       email.value=prefill;
       const password=authField('Password',{type:'password',autocomplete:'current-password',required:''});
@@ -418,7 +410,7 @@ function signedOutViews({d,err,note,actions,heading}){
 function syncStatus(value){
   if(typeof value==='string')return status(value);
   syncState={state:value.state,pending:value.pending||0};
-  status(syncMessage(syncState.state,syncState.pending),value.state==='error'||value.state==='conflict');
+  status(syncMessage(syncState.state,syncState.pending),['error','conflict','auth'].includes(value.state));
   renderAccount();
 }
 let accountChange=Promise.resolve();

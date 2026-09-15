@@ -25,9 +25,21 @@ try {
   const errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   await page.goto(base);
-  await page.waitForFunction(()=>document.querySelector('#save-status').textContent.includes('Saved'));
+  await page.waitForFunction(()=>document.querySelector('#save-status').textContent==='');
+  assert.equal(await page.locator('#save-status').isVisible(),false);
   await page.waitForFunction(()=>document.querySelector('#lake-background').complete&&document.querySelector('#lake-background').naturalWidth>0);
   assert.equal(await page.locator('#main-quote').textContent(),"Do what you can't.");
+  async function primaryFits(label){
+    const box=await page.locator('.session-row').boundingBox();
+    const nav=await page.locator('.workspace-nav').boundingBox();
+    assert.ok(box.y+box.height<nav.y,`${label}: session controls clear navigation`);
+    const shell=await page.locator('#app').boundingBox();
+    assert.ok(shell.y+shell.height<=nav.y,`${label}: scrolling content clears navigation`);
+  }
+  await page.setViewportSize({width:360,height:640});
+  await primaryFits('empty small phone');
+  await page.screenshot({path:`${out}/small-phone-empty.png`});
+  await page.setViewportSize({width:1440,height:1000});
   await page.locator('#task-input').fill('Draft the project proposal');
   await page.locator('#task-add-btn').click();
   await page.locator('.task-focus-btn').click();
@@ -40,21 +52,40 @@ try {
   await page.screenshot({path:`${out}/desktop.png`,fullPage:true});
   async function noOverflow(label){
     const overflow=await page.evaluate(()=>Array.from(document.querySelectorAll('body *')).filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&(r.right>innerWidth+1||r.left<-1);}).map(el=>({tag:el.tagName,id:el.id,class:el.className,width:el.getBoundingClientRect().width,right:el.getBoundingClientRect().right})).slice(0,20));
-    if(overflow.length)console.log(label,overflow);
+    const escaped=await page.evaluate(()=>Array.from(document.querySelectorAll('#planning-view, .ld-planner__plan > *, .ld-planner__field')).filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.right>innerWidth+1;}).map(el=>el.className));
+    assert.deepEqual(escaped,[],`${label}: planner containers fit the viewport`);
     assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${label}: horizontal overflow`);
     const quote=await page.locator('.quote-carousel').boundingBox();
     const timer=await page.locator('.timer-block').boundingBox();
-    if(timer)assert.ok(quote.y+quote.height<=timer.y+1,`${label}: quote overlaps timer`);
+    if(timer&&quote)assert.ok(quote.y+quote.height<=timer.y+1,`${label}: quote overlaps timer`);
   }
   await noOverflow('desktop');
-  for(const [label,width,height] of [['mobile',390,844],['narrow',320,740],['landscape',844,390]]){
+  for(const [label,width,height] of [['desktop-short',1366,768],['mobile',390,844],['small-phone',360,640],['narrow',320,740],['landscape',844,390]]){
     await page.setViewportSize({width,height});await page.evaluate(()=>window.scrollTo(0,0));
     await page.screenshot({path:`${out}/${label}.png`,fullPage:true});
     await noOverflow(label);
+    if(height>=640){
+      const session=await page.locator('.session-row').boundingBox();
+      const nav=await page.locator('.workspace-nav').boundingBox();
+      assert.ok(session.y+session.height < (width<=900?nav.y:height),`${label}: session controls fit above navigation`);
+    }
+    await page.locator('#btn-account').click();
+    const dialog=page.locator('dialog[open]');
+    await dialog.waitFor();
+    const primary=dialog.locator('.t-btn-primary');
+    await primary.scrollIntoViewIfNeeded();
+    const box=await primary.boundingBox();
+    assert.ok(box.width<150,`${label}: sign-in button has compact proportions`);
+    assert.ok(box.y>=0&&box.y+box.height<=height,`${label}: sign in remains reachable`);
+    await page.screenshot({path:`${out}/${label}-signin.png`});
+    await dialog.getByRole('button',{name:'Close',exact:true}).click();
+
   }
   await page.setViewportSize({width:390,height:844});
   await page.locator('#btn-start').click();
   await page.waitForFunction(()=>document.querySelector('#btn-start').textContent.includes('Pause'));
+  await page.evaluate(()=>document.querySelector('#app').scrollTop=0);
+  await primaryFits('running phone');
   await page.locator('#btn-start').click();
   await page.waitForFunction(()=>document.querySelector('#btn-start').textContent.includes('Resume'));
   await page.locator('#task-list .task-text').nth(1).click();
@@ -63,9 +94,11 @@ try {
   await page.locator('button[data-section=plan]').click();
   await page.locator('.ld-planner__form').waitFor({state:'visible'});
   assert.ok(await page.locator('.timer-block').isHidden());
+  await noOverflow('mobile plan');
   await page.screenshot({path:`${out}/mobile-plan.png`,fullPage:true});
   await page.locator('button[data-section=progress]').click();
   await page.locator('#progress-panel').waitFor({state:'visible'});
+  await noOverflow('mobile progress');
   await page.locator('button[data-section=focus]').click();
   await page.locator('#btn-zen').click();
   assert.ok(await page.locator('.quote-carousel').isVisible());
