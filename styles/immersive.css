@@ -7,7 +7,7 @@
   --ink: #f1ede2;
   --muted: #d0dfd8;
   --r: 22px;
-  --pad: clamp(16px, 3vw, 44px);
+  --pad: clamp(16px, 2.2vw, 28px);
   --gap: 24px;
   color-scheme: dark;
 }
@@ -17,7 +17,7 @@ body, #app { background: #102f2d; color: var(--ink); }
 .skip-link:focus { top: 12px; }
 #scene-stack { height: 100svh; pointer-events: none; }
 #lake-background { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; }
-#hero-veil { background: linear-gradient(180deg, transparent 0%, transparent 24%, rgba(7,25,26,.08) 34%, rgba(7,25,26,.58) 52%, rgba(7,25,26,.77) 100%); }
+#hero-veil { background: linear-gradient(180deg, transparent 0%, rgba(7,25,26,.08) 18%, rgba(7,25,26,.58) 38%, rgba(7,25,26,.77) 100%); }
 #content {
   max-width: 1480px;
   padding-bottom: 28px;
@@ -26,7 +26,7 @@ body, #app { background: #102f2d; color: var(--ink); }
   grid-template-areas: "header header" "quote quote" "timer tasks" "music stats" "account account" "footer footer";
   align-items: start;
   column-gap: clamp(32px, 5vw, 84px);
-  row-gap: 24px;
+  row-gap: 16px;
 }
 .brand-row { grid-area: header; gap: 20px; min-height: 52px; flex-wrap: wrap; color: #102f2d; }
 .brand { align-items: center; gap: 10px; flex-shrink: 0; }
@@ -38,12 +38,13 @@ body, #app { background: #102f2d; color: var(--ink); }
 .workspace-nav { display: flex; gap: 8px; margin: 0 auto; }
 .workspace-nav button { border: 0; border-radius: 12px; background: rgba(241,237,226,.7); color: #102f2d; padding: 12px 20px; min-height: 44px; cursor: pointer; font-weight: 550; }
 .workspace-nav button[aria-current] { background: #102f2d; color: var(--ink); }
-.brand-row .save-status { order: 4; width: 100%; text-align: right; margin-top: -8px; color: #102f2d; font-size: 12px; }
+.brand-row .save-status { order: 4; width: 100%; text-align: center; color: #102f2d; font-size: 13px; }
+.save-status:empty { display: none; }
 .brand-row .save-status[data-error=true] { color: #fff; background: #672e2a; padding: 8px 12px; border-radius: 10px; }
-.quote-carousel { grid-area: quote; justify-self: center; justify-content: flex-start; padding-top: 10px; min-height: clamp(156px, 24svh, 250px); }
+.quote-carousel { grid-area: quote; justify-self: center; justify-content: center; padding: 8px; min-height: 80px; }
 #main-quote { font-size: clamp(16px, 1.5vw, 21px); font-weight: 450; color: #102f2d; line-height: 1.5; max-width: 560px; text-wrap: balance; text-shadow: 0 1px 10px #ffffff90; }
 #main-quote-attr { color: #193e39; font-size: 11px; font-weight: 650; margin-top: 9px; letter-spacing: 1.4px; }
-.timer-block { grid-area: timer; gap: 20px; align-self: center; position: relative; padding: 20px 12px; border-radius: 30px; isolation: isolate; }
+.timer-block { grid-area: timer; gap: 16px; align-self: center; position: relative; padding: 16px 12px; border-radius: 30px; isolation: isolate; }
 .timer-block::before { content: ""; position: absolute; inset: -12px -22px; z-index: -1; border-radius: 35%; background: radial-gradient(ellipse, rgba(8,30,31,.66), rgba(8,30,31,.26) 58%, transparent 74%); pointer-events: none; }
 .active-strip { order: 0; width: 100%; gap: 8px; }
 .active-cap { font-size: 11px; color: var(--muted); letter-spacing: 1.8px; }
@@ -58,7 +59,8 @@ body, #app { background: #102f2d; color: var(--ink); }
 #timer-display { order: 2; font-size: clamp(80px, 8vw, 126px); font-weight: 250; letter-spacing: -3px; color: var(--ink); }
 .timer-actions { order: 3; flex-wrap: wrap; justify-content: center; gap: 10px; }
 .t-btn { min-height: 46px; font-size: 14px; background: #102f2ddd; border-color: #d0dfd860; color: var(--ink); }
-.t-btn-primary { background: var(--ink); color: #102f2d; font-weight: 650; padding: 13px 40px; min-width: 200px; font-size: 18px; }
+.t-btn-primary { background: var(--ink); color: #102f2d; font-weight: 650; padding: 11px 22px; font-size: 15px; justify-content: center; }
+.timer-actions .t-btn-primary { min-width: 180px; font-size: 17px; }
 .t-btn-icon { min-width: 46px; }
 .session-row { order: 4; font-size: 12px; color: #e0e8e3; text-transform: none; letter-spacing: .3px; }
 .session-dots .dot { width: 7px; height: 7px; background: #d0dfd860; }
@@ -111,7 +113,16 @@ body, #app { background: #102f2d; color: var(--ink); }
 .set-row { font-size: 14px; min-height: 44px; }
 .set-row input { min-width: 0; }
 .set-check { font-size: 14px; min-height: 44px; }
-dialog { background: #102f2dfa; max-height: calc(100dvh - 32px); overflow-y: auto; }
+dialog { background: #102f2dfa; max-height: calc(100dvh - 32px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; padding: 24px; border-radius: 20px; overscroll-behavior: contain; }
+dialog h2 { font-weight: 600; letter-spacing: -.3px; }
+dialog p { overflow-wrap: anywhere; }
+.dialog-actions { gap: 10px; }
+.dialog-actions > button { min-height: 44px; border-radius: 12px; padding: 10px 18px; font-size: 14px; letter-spacing: 0; }
+.dialog-error:empty, .dialog-notice:empty, #active-dots:empty { display: none; }
+.auth-body input { font-size: 16px; }
+.auth-link { display: inline-flex; align-items: center; min-height: 44px; }
+.auth-foot { margin-top: 12px; }
+.auth-foot .auth-aside { padding-top: 8px; }
 dialog p, dialog label { font-size: 14px; }
 dialog input:not([type=checkbox]), dialog select { min-height: 44px; }
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 3px solid #f1ede2; outline-offset: 3px; box-shadow: 0 0 0 6px #102f2d; }
@@ -122,6 +133,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #content[data-section=progress] .stats-panel { width: min(800px,100%); justify-self: center; }
 #content[data-section=plan] .task-panel { max-width: 1100px; justify-self: center; }
 #planning-view button, #planning-view input, #planning-view select { min-height: 44px; }
+#planning-view, .ld-planner__plan, .ld-planner__plan > *, .ld-planner__field { min-width: 0; max-width: 100%; }
+.ld-planner__field input, .ld-planner__field select { width: 100%; }
+.ld-schedule__tray button { flex-shrink: 0; }
+.ld-schedule__day strong { background: #24443f; }
 /* Zen keeps the same sky quote and lake placement without the task backlog. */
 #app.zen #content { grid-template-columns: minmax(0,1fr); grid-template-areas: "quote" "timer" "footer"; padding-top: 100px; max-width: 720px; }
 #app.zen #content > .quote-carousel { display: flex; }
@@ -131,26 +146,38 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #zen-music { position: relative; bottom: auto; left: auto; transform: none; margin: 20px auto; padding-bottom: 24px; }
 #zen-exit-btn { width: 44px; height: 44px; background: #102f2de6; }
 @media (max-width: 900px) {
-  #content { max-width: 640px; grid-template-columns: minmax(0,1fr); grid-template-areas: "header" "quote" "timer" "tasks" "music" "stats" "account" "footer"; row-gap: 20px; padding-bottom: calc(100px + env(safe-area-inset-bottom)); }
+  /* A dedicated scroll area ends above navigation, so no row sits beneath it. */
+  #app { height: calc(100dvh - 74px - env(safe-area-inset-bottom)); min-height: 0; overflow-y: auto; overflow-x: hidden; scroll-padding: 16px; }
+  #app.zen { height: 100dvh; }
+  #content { max-width: 640px; grid-template-columns: minmax(0,1fr); grid-template-areas: "header" "quote" "timer" "tasks" "music" "stats" "account" "footer"; row-gap: 16px; padding-bottom: 24px; }
+  html { scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+  #content > * { min-width: 0; }
   #lake-background { object-position: 28% 0; }
   .brand-row { gap: 8px; }
-  .brand-mark { font-size: 22px; }
-  .brand-icon { width: 40px; height: 40px; }
+  .brand-mark { font-size: 20px; }
+  .brand-icon { width: 34px; height: 34px; }
   .brand-actions { gap: 6px; }
   .brand-row .save-status { text-align: center; margin-top: 0; }
-  .workspace-nav { position: fixed; z-index: 50; left: 16px; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 520px; justify-content: space-around; background: #102f2df5; border: 1px solid #d0dfd850; box-shadow: 0 6px 24px #0005; border-radius: 24px; padding: 6px; }
-  .workspace-nav button { flex: 1; min-height: 48px; color: #e0e8e3; background: none; }
+  .workspace-nav { position: fixed; z-index: 50; left: 12px; right: 12px; bottom: calc(8px + env(safe-area-inset-bottom)); margin: 0 auto; max-width: 520px; justify-content: space-around; background: #102f2df5; border: 1px solid #d0dfd850; box-shadow: 0 6px 24px #0005; border-radius: 20px; padding: 4px; }
+  .workspace-nav button { flex: 1; min-height: 44px; padding: 10px 12px; color: #e0e8e3; background: none; font-size: 14px; }
   .workspace-nav button[aria-current] { color: #102f2d; background: var(--sage); }
-  .quote-carousel { min-height: clamp(116px,19svh,190px); padding-top: 4px; max-width: 95%; }
-  #main-quote { font-size: 17px; }
-  .timer-block { padding: 14px 0; gap: 16px; }
+  .quote-carousel { min-height: 68px; padding: 4px; max-width: 95%; }
+  #main-quote { font-size: 16px; }
+  .timer-block { padding: 12px 0; gap: 12px; }
   .timer-block::before { inset: -12px 0; }
-  #active-task-text { font-size: 25px; }
-  #timer-display { font-size: clamp(78px,22vw,112px); }
+  #active-task-text { font-size: clamp(21px,5.5vw,25px); }
+  #active-task-next { font-size: 14px; }
+  #timer-display { font-size: clamp(76px,12svh,100px); }
+  .mode-tags { width: min(100%,360px); flex-wrap: nowrap; gap: 2px; }
+  .mode-tag { flex: 1; white-space: nowrap; padding-inline: 6px; font-size: 12px; }
+  .timer-actions { max-width: 100%; }
+  .timer-actions .t-btn-primary { min-width: 156px; }
+  .timer-actions .t-btn:not(.t-btn-primary):not(.t-btn-icon) { padding-inline: 14px; }
   .panel { padding: 18px; }
   .panel-hint { display: none; }
   #content[data-section=plan] { grid-template-areas: "header" "quote" "tasks" "account" "footer"; }
   #content[data-section=progress] { grid-template-areas: "header" "quote" "stats" "account" "footer"; }
+  #content:is([data-section=plan],[data-section=progress]) .quote-carousel { display: none; }
   #app.zen #content { padding-top: 90px; padding-bottom: 0; }
 }
 @media (max-width: 600px) {
@@ -160,15 +187,33 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .task-check { margin: 10px 6px; }
 }
 @media (max-width: 380px) {
-  .brand-row { justify-content: center; }
-  .brand-actions { margin-left: 0; }
-  .brand-mark { font-size: 20px; }
-  .brand-icon { width: 32px; height: 32px; }
+  .brand-row { gap: 4px; }
+  .brand-actions { margin-left: auto; gap: 2px; }
+  .brand-mark { font-size: 18px; }
+  .brand-icon { width: 28px; height: 28px; }
   .brand { gap: 6px; }
-  .brand-btn { width: 40px; }
-  .mode-tag { padding-inline: 9px; font-size: 12px; }
+  .brand-btn { width: 44px; }
+  .mode-tag { padding-inline: 4px; font-size: 12px; }
   .task-add { flex-wrap: wrap; }
   .task-add input { min-width: 100%; }
   .stat-grid { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
+}
+/* Short windows remain scrollable; the primary controls use the space first. */
+@media (max-height: 760px) {
+  #content { row-gap: 12px; padding-top: 12px; }
+  .quote-carousel { min-height: 56px; }
+  .timer-block { gap: 10px; padding-block: 8px; }
+  #timer-display { font-size: clamp(68px,12svh,92px); }
+  #app.zen #content { padding-top: 60px; }
+}
+@media (max-height: 480px) and (max-width: 900px) {
+  .quote-carousel { display: none; }
+  #app.zen #content > .quote-carousel { display: none; }
+  #content { max-width: 720px; }
+  .timer-block { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr); justify-items: center; }
+  .active-strip { grid-column: 1; grid-row: 1 / span 3; }
+  .mode-tags, #timer-display, .timer-actions, .session-row { grid-column: 2; }
+  .timer-actions { gap: 6px; }
+  .timer-actions .t-btn-primary { min-width: 130px; }
 }
 @media (prefers-reduced-transparency: reduce) { .panel, .workspace-nav { background: #102f2d; } }

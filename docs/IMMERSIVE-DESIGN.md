@@ -11,3 +11,11 @@ Focus puts the current task and timer first. Plan exposes scheduling, while Prog
 Run `npm run check`, `npm test` and `npm run test:browser`. The browser suite covers desktop, phone, narrow phone and landscape layouts, task selection, pause/resume, navigation, Zen and offline reloads at the GitHub Pages subpath. Install Chromium once with `npx playwright install chromium`. Review screenshots are generated under `test-results/immersive/`.
 
 The same web artifact is copied into Android by `npm run android:sync`. Browser checks do not replace physical-device Android testing or accessibility testing with assistive technology.
+
+## Responsive refinement — September 2026
+
+Quote spacing is content-sized, with compact timer typography on short screens and a two-column timer in phone landscape. Phone content scrolls in a viewport ending above the bottom navigation. Plan and Progress omit the quote on phones, and navigation starts each workspace at the top. Planner grid children shrink within their container; the task tray and week calendar retain intentional horizontal scrolling.
+
+Primary timer controls retain emphasis; dialog actions use consistent 44px minimum heights and compact widths. Sign-in inputs use 16px text, long account addresses wrap, and dialogs scroll within the available viewport. Routine saving, syncing, pending counts and success dots are silent. Account identity and actionable authentication/conflict/error messages remain available. Automatic persistence and retry behavior are unchanged.
+
+Validation: 103 unit/integration tests, production build, and Chromium checks at desktop, 1366×768, 390×844, 360×640, 320×740 and 844×390. Checks cover empty/running timers, session controls above navigation, dialog proportions and reachability, planner container widths, navigation, Zen and offline reload. Generated screenshots are in `test-results/immersive/`. Android assets are refreshed with Capacitor; no device installation or live deployment is part of this local validation.

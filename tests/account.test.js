@@ -10,38 +10,36 @@ const fieldNamed = label => [...dialogOf().querySelectorAll('.auth-body label')]
   .find(l => l.textContent.startsWith(label)).querySelector('input');
 const textOf = selector => dialogOf().querySelector(selector).textContent;
 
-test('the account control sits beside settings and reports sync without being opened', async () => {
+test('account identity is quiet unless action is needed', async () => {
   const harness = await mount(stubClient());
   try {
     const button = document.getElementById('btn-account');
-    assert.ok(button, 'the control exists');
-    assert.equal(button.parentElement.className, 'brand-actions', 'it lives in the top right');
-    assert.equal(button.nextElementSibling.id, 'btn-settings', 'next to settings');
-    assert.ok(!document.querySelector('.account-actions #btn-account'), 'and no longer in the footer');
-    assert.match(button.getAttribute('aria-label'), /Not signed in/, 'guest state is legible at a glance');
-
-    // The sync state a signed-in person needs at a glance, without the DOM.
-    const {accountSummary} = harness.app;
+    assert.equal(button.nextElementSibling.id, 'btn-settings');
+    const {accountSummary, syncMessage} = harness.app;
     const account = {email: 'aoife@example.test'};
-    assert.deepEqual(accountSummary(null), {
-      initial: '', tone: 'idle', badge: '', dot: false,
-      title: 'Not signed in. Tasks stay on this device. Open to sign in and sync across devices.',
-    });
-    assert.deepEqual(accountSummary(account, {state: 'synced'}), {
-      initial: 'A', tone: 'ok', badge: '', dot: true, title: 'aoife@example.test · All changes synced',
-    });
-    // The dot is the sync state, so it says nothing when there is no sync to
-    // report, where a grey dot carrying nothing would read as an unread count.
-    assert.equal(document.querySelector('.account-dot').hidden, true, 'signed out shows no dot');
-    assert.equal(accountSummary(account, {state: 'local'}, false).dot, false, 'nor does sync being unavailable');
-    const pending = accountSummary(account, {state: 'pending', pending: 3});
-    assert.equal(pending.badge, '3', 'unsent work is counted on the control');
-    assert.equal(pending.title, 'aoife@example.test · Saved on this device · 3 changes pending');
-    assert.equal(accountSummary(account, {state: 'pending', pending: 1}).title,
-      'aoife@example.test · Saved on this device · 1 change pending', 'one change is not 1 changes');
-    assert.equal(accountSummary(account, {state: 'conflict'}).badge, '!');
-    assert.equal(accountSummary(account, {state: 'conflict'}).tone, 'alert');
-    assert.equal(accountSummary(account, {state: 'pending', pending: 40}).badge, '9', 'the badge stays one character');
+    assert.equal(accountSummary(null).dot, false);
+    for (const state of ['local','synced','pending','syncing','offline']) {
+      const summary = accountSummary(account, {state, pending: 40});
+      assert.equal(summary.title, account.email);
+      assert.equal(summary.dot, false);
+      assert.equal(summary.badge, '');
+      assert.equal(syncMessage(state, 40), '');
+    }
+    for (const state of ['auth','conflict','error']) {
+      assert.equal(accountSummary(account, {state}).badge, '!');
+      assert.ok(syncMessage(state));
+    }
+    assert.equal(document.getElementById('save-status').textContent, '');
+  } finally { await harness.dispose(); }
+});
+
+test('the signed-in account has no manual sync control', async () => {
+  const harness = await mount(stubClient({}, {user: {id:'quiet-account', email:'aoife@example.test'}}));
+  try {
+    await document.getElementById('btn-account').onclick();
+    assert.ok(dialogOf().textContent.includes('aoife@example.test'));
+    assert.ok(!dialogOf().textContent.includes('Sync now'));
+    assert.ok(dialogOf().textContent.includes('Sign out'));
   } finally { await harness.dispose(); }
 });
 
