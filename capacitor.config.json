@@ -7,6 +7,15 @@
     "LocalNotifications": {
       "smallIcon": "ic_stat_loughdin",
       "iconColor": "#2a3325"
+    },
+    "SocialLogin": {
+      "providers": {
+        "google": true,
+        "facebook": false,
+        "apple": false,
+        "twitter": false
+      },
+      "logLevel": 1
     }
   }
 }

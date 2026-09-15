@@ -1,12 +1,32 @@
 import {Capacitor} from '@capacitor/core';
 import {App} from '@capacitor/app';
 import {LocalNotifications} from '@capacitor/local-notifications';
+import {SocialLogin} from '@capgo/capacitor-social-login';
+import {createGoogleNonce} from './google-nonce.js';
 
 const NATIVE = Capacitor.isNativePlatform();
 const NOTIFICATION_ID = 42801;
+let googleReady = null;
 
 export function isNativeApp() {
   return NATIVE;
+}
+
+/**
+ * Google does not allow its sign-in page inside an app's WebView, so Android
+ * uses the system account sheet (Credential Manager) and hands the resulting
+ * ID token to Supabase. The consent shown is Google's own, not a supabase.co
+ * page. Returns the raw nonce for signInWithIdToken alongside the token.
+ */
+export async function signInWithGoogleNative({webClientId}) {
+  if (!NATIVE) throw new Error('Native Google sign-in is only available in the Android app.');
+  googleReady ??= SocialLogin.initialize({google: {webClientId, mode: 'online'}}).catch(error => { googleReady = null; throw error; });
+  await googleReady;
+  const nonce = await createGoogleNonce();
+  const response = await SocialLogin.login({provider: 'google', options: {nonce: nonce.hashed, style: 'bottom', filterByAuthorizedAccounts: false}});
+  const idToken = response?.result?.idToken;
+  if (!idToken) throw new Error('Google did not return a sign-in token. Try again.');
+  return {idToken, nonce: nonce.raw};
 }
 
 /**

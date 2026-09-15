@@ -15,7 +15,7 @@ repository.
 | Redirect URL | `https://padraigbros.github.io/LoughdIn/` |
 | Redirect URL | `http://localhost:4173/` |
 | Wildcards in the allow list | None |
-| Enabled providers | Email and password only |
+| Enabled providers | Email and password, Google |
 | Anonymous sign-in | Off |
 | Open sign-up | On |
 | Email confirmation required | Yes |
@@ -26,7 +26,8 @@ The two redirect URLs are exactly what the app asks for. `authRedirectURL` in
 [src/app.js](../src/app.js) computes `new URL('.', location.href)` with the
 query and fragment stripped, which is the directory the app is served from: the
 Pages subpath in production, and the dev server root on `PORT` 4173. Nothing
-else needs to be on the allow list until Android deep links are decided.
+else needs to be on the allow list: the Android app signs in with Google
+natively and never redirects (see below).
 
 ## Email delivery
 
@@ -109,11 +110,40 @@ Steps 5 to 7 are covered by `tests/two-client-acceptance.test.js` against a
 reference server. Running them live is what proves the real project behaves the
 same way.
 
-## Android deep links
+## Google sign-in
 
-Not yet decided, and deliberately not in the browser allow list. Once the
-application id, signing flavour and scheme are chosen, record here the exact
-redirect URI, whether it is an HTTPS app link or a custom scheme, and who owns
-the verification file. Test cold start, process death, a link opened while the
-wrong account is signed in, cancellation, and account switching on a physical
-device. Do not widen the browser allow list to accommodate a native callback.
+Google project `nth-celerity-508422-r0`, consent screen **In production**.
+
+**Web.** The "Lough'd In Web" OAuth client redirects through
+`https://kknbyhlwmuzttyxyuffe.supabase.co/auth/v1/callback`, so Google's consent
+page names that domain. A Supabase custom domain (paid add-on) is the fix, and
+its callback must then be added to the client alongside the existing one.
+
+**Android.** Google does not allow its sign-in page inside an app's WebView, so
+the app uses `@capgo/capacitor-social-login`, which shows the system account
+sheet (Credential Manager). The resulting ID token goes to
+`supabase.auth.signInWithIdToken` with a nonce: Google receives the SHA-256 hex
+digest and Supabase the raw value (`src/google-nonce.js`). There is no redirect
+URL or deep link, and nothing was added to the allow list.
+
+Credential Manager only answers apps it recognises. In the same Google project:
+
+1. Create an OAuth client of type **Android** for package `ie.loughdin.app`
+   with the SHA-1 of the release upload key. Get it with
+   `keytool -list -v -keystore ~/.loughdin-release/loughdin-release.jks -alias loughdin`.
+2. Add another Android client (or fingerprint) for every other key that signs
+   an APK you test on a phone, such as Android Studio's local debug key, and
+   Google Play's app-signing key if the app is published through Play.
+3. Leave Supabase's Google provider as it is. The app passes the **Web** client
+   ID as `webClientId`, so tokens are issued for the Web client that Supabase
+   already lists first. Keep **Skip nonce check** off.
+
+CI debug APKs are signed with a new throwaway key on every run, so Google
+sign-in fails on them with `[28444] Developer console is not set up correctly`.
+Test it on a release-signed APK or a local build whose key is registered.
+
+On a physical device, test: first sign-in and consent, cancelling the sheet,
+choosing between two Google accounts, signing out and back in, a device with
+no Google account, a revoked grant (Google Account → Security → Third-party
+access), process death during sign-in, and account switching with pending
+guest work.
