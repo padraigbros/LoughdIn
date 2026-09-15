@@ -29,3 +29,6 @@ dialog{color:#f4f4ef;background:#20281ff5;border:1px solid #ffffff35;border-radi
 .auth-reveal{display:flex!important;align-items:center;gap:8px;font-size:12px;margin-top:12px!important}
 .auth-reveal input{margin:0!important}
 .update-btn{border-color:#8fc98a80!important;color:#d8ecd2!important;background:#8fc98a1f!important}
+.t-btn-google{width:100%;justify-content:center;background:#4285f4!important;color:#fff!important;border-color:transparent!important;font-weight:500;padding:10px 20px}
+.t-btn-google:active{background:#3367d6!important}
+.auth-divider{display:flex;align-items:center;gap:12px;margin:14px 0;font-size:12px;color:rgba(255,255,255,.45)}.auth-divider::before,.auth-divider::after{content:'';flex:1;border-top:1px solid rgba(255,255,255,.15)}
